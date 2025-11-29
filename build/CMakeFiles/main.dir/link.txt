@@ -1,1 +1,0 @@
-/usr/bin/g++ -g CMakeFiles/main.dir/src/lib_vfio.cpp.o CMakeFiles/main.dir/src/main.cpp.o -o main 

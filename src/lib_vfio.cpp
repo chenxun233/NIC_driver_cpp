@@ -26,6 +26,7 @@ this->_get_group_id();
 this->_get_container_fd();
 this->_get_group_fd();
 this->_add_group_to_container();
+this->_get_device_fd();
 }
 
 vfio_device::~vfio_device(){
@@ -71,10 +72,8 @@ bool vfio_device::_get_container_fd(){
     }
 
     debug("VFIO container fd acquired: %d", cfd);
-    // carry on with group fd acquisition, etc.
     return true;
-
- }
+}
 
 bool vfio_device::_get_group_fd(){
     if (this->m_fds.group_id == -1) {
@@ -92,7 +91,7 @@ bool vfio_device::_add_group_to_container(){
     if (this->m_fds.container_fd == -1 || this->m_fds.group_fd == -1) {
         warn("Container fd or group fd is invalid");
         return false;
-    };
+    }
         // check if the container's API version is the same as the VFIO API's
 	check_err((ioctl(this->m_fds.container_fd, VFIO_GET_API_VERSION) == VFIO_API_VERSION) - 1, "get a valid API version from the container");
 	// check if type1 is supported
@@ -107,7 +106,26 @@ bool vfio_device::_add_group_to_container(){
 
 	// Add group to container
 	check_err(ioctl(this->m_fds.group_fd, VFIO_GROUP_SET_CONTAINER, &this->m_fds.container_fd), "set container");
+
+    int ret = ::ioctl(this->m_fds.container_fd, VFIO_SET_IOMMU, VFIO_TYPE1_IOMMU);
+    if (ret == -1 && errno != EBUSY) {
+        warn("set Type1 IOMMU for the container: %s", strerror(errno));
+        return false;
+    }
+
     debug("VFIO group %d added to container %d", this->m_fds.group_fd, this->m_fds.container_fd);
+    return true;
+
+}
+
+bool vfio_device::_get_device_fd(){
+    if (this->m_fds.group_fd == -1) {
+        warn("Group fd is invalid");
+        return false;
+    }
+    int dfd = check_err(ioctl(this->m_fds.group_fd, VFIO_GROUP_GET_DEVICE_FD, this->m_pci_addr.c_str()), "get device fd from group");
+    this->m_fds.device_fd = dfd;
+    debug("VFIO device fd acquired: %d", dfd);
     return true;
 
 }

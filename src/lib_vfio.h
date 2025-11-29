@@ -30,6 +30,7 @@ class vfio_device{
         bool _get_group_id();
         bool _get_group_fd();
         bool _get_container_fd();
+        bool _get_device_fd();
         bool _add_group_to_container();
 
         iommu_aperture m_iommu_aperture;
