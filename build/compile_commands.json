@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/home/chenxun/Documents/Project/NIC_driver_cpp/build",
+  "command": "/usr/bin/g++  -I/home/chenxun/Documents/Project/NIC_driver_cpp/src -g -std=c++20 -g -O2 -march=native -fomit-frame-pointer -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -Wall -Wextra -Wpedantic -o CMakeFiles/main.dir/src/lib_vfio.cpp.o -c /home/chenxun/Documents/Project/NIC_driver_cpp/src/lib_vfio.cpp",
+  "file": "/home/chenxun/Documents/Project/NIC_driver_cpp/src/lib_vfio.cpp",
+  "output": "CMakeFiles/main.dir/src/lib_vfio.cpp.o"
+},
+{
+  "directory": "/home/chenxun/Documents/Project/NIC_driver_cpp/build",
+  "command": "/usr/bin/g++  -I/home/chenxun/Documents/Project/NIC_driver_cpp/src -g -std=c++20 -g -O2 -march=native -fomit-frame-pointer -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -Wall -Wextra -Wpedantic -o CMakeFiles/main.dir/src/main.cpp.o -c /home/chenxun/Documents/Project/NIC_driver_cpp/src/main.cpp",
+  "file": "/home/chenxun/Documents/Project/NIC_driver_cpp/src/main.cpp",
+  "output": "CMakeFiles/main.dir/src/main.cpp.o"
+}
+]
