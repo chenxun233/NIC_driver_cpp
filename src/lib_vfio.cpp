@@ -14,24 +14,31 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
 #include "log.h"
 
 
-
-vfio_device::vfio_device(std::string pci_address): 
+vfio_device::vfio_device(std::string pci_address,uint8_t bar_index, int interrupt_timeout_ms): 
 m_pci_addr(pci_address),
-m_fds({-1, -1, -1, -1})
+m_fds({-1, -1, -1, -1}),
+m_interrupt_enabled(interrupt_timeout_ms > 0)
 {
 this->_get_group_id();
 this->_get_container_fd();
 this->_get_group_fd();
 this->_add_group_to_container();
 this->_get_device_fd();
+this->_map_bar_addr(bar_index);
+if (m_interrupt_enabled) {
+    p_interrupt_handler = std::make_unique<interrupt_handler>(*this);
+}
+
 }
 
 vfio_device::~vfio_device(){
 
 }
+
 bool vfio_device::_get_group_id(){
     std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_pci_addr;
     struct stat st;
@@ -128,4 +135,32 @@ bool vfio_device::_get_device_fd(){
     debug("VFIO device fd acquired: %d", dfd);
     return true;
 
+}
+
+bool vfio_device::_map_bar_addr(uint8_t bar_index){
+    if (bar_index > VFIO_PCI_BAR5_REGION_INDEX){
+        warn("BAR index %d is out of range", bar_index);
+        return false;
+    }
+    if (this->m_fds.device_fd == -1) {
+        warn("Device fd is invalid");
+        return false;
+    }
+    for (int i = 0; i <= bar_index; i++) {
+        struct vfio_region_info region_info = {};
+        region_info.argsz = sizeof(region_info);
+	    region_info.index = i;
+	    int ret = ioctl(this->m_fds.device_fd, VFIO_DEVICE_GET_REGION_INFO, &region_info);
+        if (ret == -1) {
+            // Failed to set iommu type
+            return MAP_FAILED; // MAP_FAILED == ((void *) -1)
+        }
+        uint8_t* temp_addr = (uint8_t*) mmap(NULL, region_info.size, PROT_READ | PROT_WRITE, MAP_SHARED, this->m_fds.device_fd, region_info.offset);
+        if (temp_addr == MAP_FAILED) {
+            continue;
+        }
+        p_bar_addr[i] = temp_addr;
+        debug("Mapped BAR %d: addr=%p", i, p_bar_addr[i]);    
+    }
+    return true;
 }
