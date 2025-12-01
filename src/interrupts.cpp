@@ -5,9 +5,8 @@
 
 
 interrupt_handler::interrupt_handler(class vfio_device& device){
-if (device.get_interrupt_enabled()) {
+if (device.is_interrupt_enabled()) {
     this->_set_interrupt_type(device);
-    
 }
 }
 

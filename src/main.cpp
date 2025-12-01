@@ -2,7 +2,6 @@
 #include "interrupts.h"
 
 int main() {
-    vfio_device device("0000:04:00.0", 0);
-    interrupt_handler irq_handler(device);
+    vfio_device device("0000:04:00.0", 0,10);
     return 0;
 }

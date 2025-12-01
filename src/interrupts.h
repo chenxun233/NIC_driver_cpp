@@ -1,3 +1,5 @@
+#ifndef INTERRUPTS_H
+#define INTERRUPTS_H
 #include <cstdint>
 
 class interrupt_handler {
@@ -10,3 +12,4 @@ class interrupt_handler {
         uint8_t interrupt_type;
         int interrupt_fd;
 };
+#endif // INTERRUPTS_H

@@ -21,22 +21,42 @@
 vfio_device::vfio_device(std::string pci_address,uint8_t bar_index, int interrupt_timeout_ms): 
 m_pci_addr(pci_address),
 m_fds({-1, -1, -1, -1}),
-m_interrupt_enabled(interrupt_timeout_ms > 0)
+m_interrupt_timeout_ms(interrupt_timeout_ms),
+m_is_interrupt_enabled(interrupt_timeout_ms > 0),
+m_is_vfio_enabled(false)
 {
 this->_get_group_id();
 this->_get_container_fd();
 this->_get_group_fd();
 this->_add_group_to_container();
 this->_get_device_fd();
-this->_map_bar_addr(bar_index);
-if (m_interrupt_enabled) {
+this->_map_bar(bar_index);
+if (m_is_interrupt_enabled) {
+    debug("Interrupts enabled with timeout %d ms", m_interrupt_timeout_ms);
     p_interrupt_handler = std::make_unique<interrupt_handler>(*this);
+}
+else{
+    debug("Interrupts disabled");
 }
 
 }
 
 vfio_device::~vfio_device(){
 
+}
+
+bool vfio_device::_remove_ixgbe_driver(){
+    std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_pci_addr.c_str()/"driver/unbind";
+	int fd = open(device_dir.c_str(), O_WRONLY);
+	if (fd == -1) {
+		debug("no driver loaded");
+		return true;
+	}
+	if (write(fd, m_pci_addr.c_str(), strlen(m_pci_addr.c_str())) != (ssize_t) strlen(m_pci_addr.c_str())) {
+		warn("failed to unload driver for device %s", m_pci_addr.c_str());
+	}
+	check_err(close(fd), "close");
+    return true;
 }
 
 bool vfio_device::_get_group_id(){
@@ -127,17 +147,30 @@ bool vfio_device::_add_group_to_container(){
 
 bool vfio_device::_get_device_fd(){
     if (this->m_fds.group_fd == -1) {
-        warn("Group fd is invalid");
+        warn("Group fd is invalid"); 
         return false;
     }
     int dfd = check_err(ioctl(this->m_fds.group_fd, VFIO_GROUP_GET_DEVICE_FD, this->m_pci_addr.c_str()), "get device fd from group");
     this->m_fds.device_fd = dfd;
+    this->m_is_vfio_enabled = true;
     debug("VFIO device fd acquired: %d", dfd);
     return true;
 
 }
 
-bool vfio_device::_map_bar_addr(uint8_t bar_index){
+bool vfio_device::_map_bar(uint8_t bar_index){
+    if (m_is_vfio_enabled){
+        return this->_map_bar_via_vfio(bar_index);
+    } else {
+        this->_remove_ixgbe_driver();
+        this->_enable_dma();
+        return this->_map_bar_directly();
+    }
+    error("Failed to map BAR");
+    return false;
+}
+
+bool vfio_device::_map_bar_via_vfio(uint8_t bar_index){
     if (bar_index > VFIO_PCI_BAR5_REGION_INDEX){
         warn("BAR index %d is out of range", bar_index);
         return false;
@@ -155,7 +188,7 @@ bool vfio_device::_map_bar_addr(uint8_t bar_index){
             // Failed to set iommu type
             return MAP_FAILED; // MAP_FAILED == ((void *) -1)
         }
-        uint8_t* temp_addr = (uint8_t*) mmap(NULL, region_info.size, PROT_READ | PROT_WRITE, MAP_SHARED, this->m_fds.device_fd, region_info.offset);
+        uint8_t* temp_addr = static_cast<uint8_t*> (::mmap(NULL, region_info.size, PROT_READ | PROT_WRITE, MAP_SHARED, this->m_fds.device_fd, region_info.offset));
         if (temp_addr == MAP_FAILED) {
             continue;
         }
@@ -164,3 +197,40 @@ bool vfio_device::_map_bar_addr(uint8_t bar_index){
     }
     return true;
 }
+
+bool vfio_device::_enable_dma(){
+    std::filesystem::path res = std::filesystem::path("/sys/bus/pci/devices")
+            / m_pci_addr / "config";
+	int fd = check_err(open(res.c_str(), O_RDWR), "open pci config");
+	// write to the command register (offset 4) in the PCIe config space
+	// bit 2 is "bus master enable", see PCIe 3.0 specification section 7.5.1.1
+	assert(lseek(fd, 4, SEEK_SET) == 4);
+	uint16_t dma = 0;
+	assert(read(fd, &dma, 2) == 2);
+	dma |= 1 << 2;
+	assert(lseek(fd, 4, SEEK_SET) == 4);
+	assert(write(fd, &dma, 2) == 2);
+	check_err(close(fd), "close");
+    return true;
+}
+
+bool vfio_device::_map_bar_directly(){
+    for (int bar = 0; bar <= 5; ++bar) {
+        std::filesystem::path res = std::filesystem::path("/sys/bus/pci/devices")
+            / m_pci_addr / ("resource" + std::to_string(bar));
+        int fd = check_err(::open(res.c_str(), O_RDWR | O_SYNC), "open pci resource");
+        struct stat st {};
+        check_err(::fstat(fd, &st), "stat pci resource");
+        uint8_t* addr = static_cast<uint8_t*>(
+            ::mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+        if (addr == MAP_FAILED) {
+            check_err(::close(fd), "close pci resource");
+            continue;
+        }
+        this->p_bar_addr[bar] = addr;
+        debug("BAR%d mapped: %p len %zu", bar, addr, static_cast<size_t>(st.st_size));
+        check_err(::close(fd), "close pci resource");
+    }   
+    return true;
+}
+
