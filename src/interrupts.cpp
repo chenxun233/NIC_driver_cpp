@@ -4,28 +4,27 @@
 #include <sys/ioctl.h>
 
 
-interrupt_handler::interrupt_handler(class vfio_device& device){
-if (device.is_interrupt_enabled()) {
-    this->_set_interrupt_type(device);
-}
+interrupt::interrupt(class vfio_device& device){
+	this->_set_interrupt_type(device);
 }
 
-interrupt_handler::~interrupt_handler(){
+interrupt::~interrupt(){
 
 }
 
 
 
-bool interrupt_handler::_set_interrupt_type(class vfio_device& device){
+bool interrupt::_set_interrupt_type(class vfio_device& device){
+	if (!device.is_interrupt_enabled()) {
+		return false;
+	}
 	info("Setup VFIO Interrupts");
 
 	for (int i = VFIO_PCI_MSIX_IRQ_INDEX; i >= 0; i--) {
 		struct vfio_irq_info irq = {};
         irq.argsz = sizeof(irq);
         irq.index = i;
-
 		check_err(ioctl(device.get_device_fd(), VFIO_DEVICE_GET_IRQ_INFO, &irq), "get IRQ Info");
-
 		/* if this vector cannot be used with eventfd continue with next*/
 		if ((irq.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
 			debug("IRQ doesn't support Event FD");

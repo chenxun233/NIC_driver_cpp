@@ -43,12 +43,12 @@ class vfio_device{
         int m_interrupt_timeout_ms;
         bool m_is_interrupt_enabled;
         bool m_is_vfio_enabled;
-        std::unique_ptr<interrupt_handler> p_interrupt_handler;
+        std::unique_ptr<interrupt> p_interrupt;
         std::array<uint8_t*,6> p_bar_addr;
         iommu_aperture m_iommu_aperture;
         
         
-
+        bool _initialize(uint8_t bar_index);
         bool _remove_ixgbe_driver();
         bool _get_group_id();
         bool _get_group_fd();
@@ -57,8 +57,9 @@ class vfio_device{
         bool _add_group_to_container();
         bool _map_bar(uint8_t bar_index);
         bool _map_bar_via_vfio(uint8_t bar_index);
-        bool _map_bar_directly();
+        bool _map_bar_directly(uint8_t bar_index);
         bool _enable_dma();
+        bool _interrupt_handler();
 
 
 };

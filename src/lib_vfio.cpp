@@ -25,39 +25,26 @@ m_interrupt_timeout_ms(interrupt_timeout_ms),
 m_is_interrupt_enabled(interrupt_timeout_ms > 0),
 m_is_vfio_enabled(false)
 {
-this->_get_group_id();
-this->_get_container_fd();
-this->_get_group_fd();
-this->_add_group_to_container();
-this->_get_device_fd();
-this->_map_bar(bar_index);
-if (m_is_interrupt_enabled) {
-    debug("Interrupts enabled with timeout %d ms", m_interrupt_timeout_ms);
-    p_interrupt_handler = std::make_unique<interrupt_handler>(*this);
-}
-else{
-    debug("Interrupts disabled");
-}
-
+this->_initialize(bar_index);
 }
 
 vfio_device::~vfio_device(){
 
 }
 
-bool vfio_device::_remove_ixgbe_driver(){
-    std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_pci_addr.c_str()/"driver/unbind";
-	int fd = open(device_dir.c_str(), O_WRONLY);
-	if (fd == -1) {
-		debug("no driver loaded");
-		return true;
-	}
-	if (write(fd, m_pci_addr.c_str(), strlen(m_pci_addr.c_str())) != (ssize_t) strlen(m_pci_addr.c_str())) {
-		warn("failed to unload driver for device %s", m_pci_addr.c_str());
-	}
-	check_err(close(fd), "close");
-    return true;
+bool vfio_device::_initialize(uint8_t bar_index){            
+
+    return
+    this->_get_group_id()               &&
+    this->_get_container_fd()           &&
+    this->_get_group_fd()               &&
+    this->_add_group_to_container()     &&
+    this->_get_device_fd()              && 
+    this->_map_bar(bar_index)           &&
+    this->_interrupt_handler();
 }
+
+
 
 bool vfio_device::_get_group_id(){
     std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_pci_addr;
@@ -85,19 +72,13 @@ bool vfio_device::_get_group_id(){
 bool vfio_device::_get_container_fd(){
     int cfd = m_fds.container_fd;
     if (cfd == -1) {
-        cfd = check_err(::open("/dev/vfio/vfio", O_RDWR), "open /dev/vfio/vfio");
+        cfd = ::open("/dev/vfio/vfio", O_RDWR);
+        if (cfd == -1){
+            error("filed to open /dev/vfio/vfio");
+            return false;
+        }
         m_fds.container_fd = cfd;
-
-        if (::ioctl(cfd, VFIO_GET_API_VERSION) != VFIO_API_VERSION) {
-            warn("get a valid API version from the container");
-            return false;
-        }
-        if (::ioctl(cfd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU) != 1) {
-            warn("get Type1 IOMMU support from the container");
-            return false;
-        }
     }
-
     debug("VFIO container fd acquired: %d", cfd);
     return true;
 }
@@ -108,7 +89,7 @@ bool vfio_device::_get_group_fd(){
         return false;
     }
     std::string group_path = "/dev/vfio/" + std::to_string(this->m_fds.group_id);
-    int gfd = check_err(::open(group_path.c_str(), O_RDWR), "open VFIO group");
+    int gfd =check_err(::open(group_path.c_str(), O_RDWR), "open vfio group");
     this->m_fds.group_fd = gfd;
     debug("VFIO group fd acquired: %d", gfd);
     return true;
@@ -133,7 +114,6 @@ bool vfio_device::_add_group_to_container(){
 
 	// Add group to container
 	check_err(ioctl(this->m_fds.group_fd, VFIO_GROUP_SET_CONTAINER, &this->m_fds.container_fd), "set container");
-
     int ret = ::ioctl(this->m_fds.container_fd, VFIO_SET_IOMMU, VFIO_TYPE1_IOMMU);
     if (ret == -1 && errno != EBUSY) {
         warn("set Type1 IOMMU for the container: %s", strerror(errno));
@@ -155,16 +135,17 @@ bool vfio_device::_get_device_fd(){
     this->m_is_vfio_enabled = true;
     debug("VFIO device fd acquired: %d", dfd);
     return true;
-
 }
 
 bool vfio_device::_map_bar(uint8_t bar_index){
     if (m_is_vfio_enabled){
-        return this->_map_bar_via_vfio(bar_index);
+        return 
+        this->_map_bar_via_vfio(bar_index);
     } else {
-        this->_remove_ixgbe_driver();
-        this->_enable_dma();
-        return this->_map_bar_directly();
+        return
+        this->_remove_ixgbe_driver()    &&
+        this->_enable_dma()             &&
+        this->_map_bar_directly(bar_index);
     }
     error("Failed to map BAR");
     return false;
@@ -185,16 +166,32 @@ bool vfio_device::_map_bar_via_vfio(uint8_t bar_index){
 	    region_info.index = i;
 	    int ret = ioctl(this->m_fds.device_fd, VFIO_DEVICE_GET_REGION_INFO, &region_info);
         if (ret == -1) {
-            // Failed to set iommu type
-            return MAP_FAILED; // MAP_FAILED == ((void *) -1)
+            warn("Failed to get region info for BAR %d: %s", i, strerror(errno));
+            return false; // MAP_FAILED == ((void *) -1)
         }
         uint8_t* temp_addr = static_cast<uint8_t*> (::mmap(NULL, region_info.size, PROT_READ | PROT_WRITE, MAP_SHARED, this->m_fds.device_fd, region_info.offset));
         if (temp_addr == MAP_FAILED) {
-            continue;
+            error("Failed to mmap BAR %d: %s", i, strerror(errno));
+            return false;
         }
         p_bar_addr[i] = temp_addr;
         debug("Mapped BAR %d: addr=%p", i, p_bar_addr[i]);    
     }
+    return true;
+}
+
+bool vfio_device::_remove_ixgbe_driver(){
+    std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_pci_addr.c_str()/"driver/unbind";
+	int fd = open(device_dir.c_str(), O_WRONLY);
+	if (fd == -1) {
+		debug("no driver loaded");
+		return false;
+	}
+	if (write(fd, m_pci_addr.c_str(), strlen(m_pci_addr.c_str())) != (ssize_t) strlen(m_pci_addr.c_str())) {
+		warn("failed to unload driver for device %s", m_pci_addr.c_str());
+        return false;
+	}
+	check_err(close(fd), "close");
     return true;
 }
 
@@ -214,8 +211,8 @@ bool vfio_device::_enable_dma(){
     return true;
 }
 
-bool vfio_device::_map_bar_directly(){
-    for (int bar = 0; bar <= 5; ++bar) {
+bool vfio_device::_map_bar_directly(uint8_t bar_index){
+    for (int bar = 0; bar <= bar_index; ++bar) {
         std::filesystem::path res = std::filesystem::path("/sys/bus/pci/devices")
             / m_pci_addr / ("resource" + std::to_string(bar));
         int fd = check_err(::open(res.c_str(), O_RDWR | O_SYNC), "open pci resource");
@@ -225,12 +222,23 @@ bool vfio_device::_map_bar_directly(){
             ::mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
         if (addr == MAP_FAILED) {
             check_err(::close(fd), "close pci resource");
-            continue;
+            return false;
         }
         this->p_bar_addr[bar] = addr;
         debug("BAR%d mapped: %p len %zu", bar, addr, static_cast<size_t>(st.st_size));
         check_err(::close(fd), "close pci resource");
     }   
+    return true;
+}
+
+bool vfio_device::_interrupt_handler(){
+    if (m_is_interrupt_enabled && m_is_vfio_enabled){ 
+    debug("Interrupts enabled with timeout %d ms", m_interrupt_timeout_ms);
+    p_interrupt = std::make_unique<interrupt>(*this);
+    }
+    else{
+        debug("Interrupts disabled");
+    }
     return true;
 }
 

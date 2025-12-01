@@ -2,10 +2,10 @@
 #define INTERRUPTS_H
 #include <cstdint>
 
-class interrupt_handler {
+class interrupt {
     public:
-        interrupt_handler(class vfio_device& device);
-        ~interrupt_handler();
+        interrupt(class vfio_device& device);
+        ~interrupt();
 
     private:
         bool _set_interrupt_type(class vfio_device& device);
