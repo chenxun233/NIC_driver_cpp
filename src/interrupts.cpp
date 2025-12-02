@@ -1,21 +1,21 @@
 #include "interrupts.h"
-#include "lib_vfio.h"
 #include "log.h"
 #include <sys/ioctl.h>
+#include <linux/vfio.h>
 
 
-interrupt::interrupt(class vfio_device& device){
-	this->_set_interrupt_type(device);
+interrupt::interrupt(int device_fd,int interrupt_timeout_ms):
+interrupt_timeout_ms(interrupt_timeout_ms)
+{
+	this->_set_interrupt_type(device_fd);
 }
 
 interrupt::~interrupt(){
 
 }
 
-
-
-bool interrupt::_set_interrupt_type(class vfio_device& device){
-	if (!device.is_interrupt_enabled()) {
+bool interrupt::_set_interrupt_type(int device_fd){
+	if (!device_fd) {
 		return false;
 	}
 	info("Setup VFIO Interrupts");
@@ -24,7 +24,7 @@ bool interrupt::_set_interrupt_type(class vfio_device& device){
 		struct vfio_irq_info irq = {};
         irq.argsz = sizeof(irq);
         irq.index = i;
-		check_err(ioctl(device.get_device_fd(), VFIO_DEVICE_GET_IRQ_INFO, &irq), "get IRQ Info");
+		ioctl(device_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq);
 		/* if this vector cannot be used with eventfd continue with next*/
 		if ((irq.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
 			debug("IRQ doesn't support Event FD");

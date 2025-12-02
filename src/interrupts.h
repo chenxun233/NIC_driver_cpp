@@ -4,11 +4,12 @@
 
 class interrupt {
     public:
-        interrupt(class vfio_device& device);
+        interrupt(int device_fd,int interrupt_timeout_ms);
         ~interrupt();
 
     private:
-        bool _set_interrupt_type(class vfio_device& device);
+        bool _set_interrupt_type(int device_fd);
+        int interrupt_timeout_ms;
         uint8_t interrupt_type;
         int interrupt_fd;
 };
