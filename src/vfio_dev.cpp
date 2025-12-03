@@ -9,9 +9,20 @@
 #include <memory>
 
 vfio_dev::vfio_dev(
-        const  basic_para_type& basic_para):
-basic_dev(basic_para),
-m_fds{-1, -1, -1, -1}
+                    std::string pci_addr,
+                    uint8_t     bar_index,
+                    uint16_t    num_rx_queues,
+                    uint16_t    num_tx_queues,
+                    uint16_t    interrupt_timeout_ms
+):
+basic_dev(
+    pci_addr, 
+    bar_index, 
+    num_rx_queues, 
+    num_tx_queues, 
+    interrupt_timeout_ms
+),
+m_fds{-1, -1, -1, -1}   
 {
 };
 
@@ -27,7 +38,7 @@ bool vfio_dev::initialize() {
     this->_get_device_fd()              &&
     this->enable_dma()                  &&
     this->map_bar()                     &&
-    this->set_interrupt();            
+    this->set_interrupt_host();            
 };
 
 
@@ -168,19 +179,13 @@ bool vfio_dev::map_bar () {
             error("Failed to mmap BAR %d: %s", i, strerror(errno));
             return false;
         }
-        p_bar_addr[i] = temp_addr;
-        debug("Mapped BAR %d: addr=%p", i, p_bar_addr[i]);    
+        m_basic_para.p_bar_addr[i] = temp_addr;
+        debug("Mapped BAR %d: addr=%p", i, m_basic_para.p_bar_addr[i]);    
     }
     return true;         
 };
 
-bool vfio_dev::set_interrupt() {
-    p_interrupt = std::make_unique<interrupt>(
-        this->m_fds.device_fd,
-        this->m_basic_para.interrupt_timeout_ms
-    );
-    return true;
-};
+
 bool vfio_dev::enable_dma() {
 	int command_register_offset = 4;
 	// bit 2 is "bus master enable", see PCIe 3.0 specification section 7.5.1.1
@@ -196,3 +201,43 @@ bool vfio_dev::enable_dma() {
 	assert(pwrite(this->m_fds.device_fd, &dma, 2, conf_reg.offset + command_register_offset) == 2);
     return true;
 }
+
+bool vfio_dev::tx_batch() {
+
+    return true;
+}
+bool vfio_dev::rx_batch(){
+    return true;
+}       
+bool vfio_dev::read_stats(){
+    return true;
+}     
+bool vfio_dev::set_promisc(){
+    return true;
+}    
+bool vfio_dev::get_link_speed(){
+    return true;
+} 
+bool vfio_dev::set_mac_address(){
+    return true;
+}
+bool vfio_dev::get_mac_address(){
+    return true;
+}
+bool vfio_dev::reset(){
+    return true;
+}
+
+bool vfio_dev::set_interrupt_host() {
+    if (m_basic_para.interrupt_timeout_ms == 0) {
+        info("Interrupt is disabled");
+        return true;
+    }
+    p_interrupt = std::make_unique<interrupt>(
+        this->m_fds.device_fd,
+        this->m_basic_para.interrupt_timeout_ms,
+        this->m_basic_para.num_rx_queues,
+        this->m_basic_para.num_tx_queues
+    );
+    return true;
+};

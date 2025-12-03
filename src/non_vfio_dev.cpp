@@ -10,8 +10,19 @@
 #include <memory>
 
 non_vfio_dev::non_vfio_dev(
-        const basic_para_type& basic_para )
-: basic_dev(basic_para)
+                    std::string pci_addr,
+                    uint8_t     bar_index,
+                    uint16_t    num_rx_queues,
+                    uint16_t    num_tx_queues,
+                    uint16_t    interrupt_timeout_ms
+):
+basic_dev(
+    pci_addr, 
+    bar_index, 
+    num_rx_queues, 
+    num_tx_queues, 
+    interrupt_timeout_ms
+)
 {
 
 };
@@ -38,7 +49,7 @@ bool non_vfio_dev::map_bar () {
             check_err(::close(fd), "close pci resource");
             return false;
         }
-        this->p_bar_addr[bar] = addr;
+        this->m_basic_para.p_bar_addr[bar] = addr;
         debug("BAR%d mapped: %p len %zu", bar, addr, static_cast<size_t>(st.st_size));
         check_err(::close(fd), "close pci resource");
     }   
@@ -74,3 +85,28 @@ bool non_vfio_dev::enable_dma() {
 	check_err(close(fd), "close");
     return true;
 };
+
+bool non_vfio_dev::tx_batch() {
+    return true;
+}
+bool non_vfio_dev::rx_batch(){
+    return true;
+}       
+bool non_vfio_dev::read_stats(){
+    return true;
+}     
+bool non_vfio_dev::set_promisc(){
+    return true;
+}    
+bool non_vfio_dev::get_link_speed(){
+    return true;
+} 
+bool non_vfio_dev::set_mac_address(){
+    return true;
+}
+bool non_vfio_dev::get_mac_address(){
+    return true;
+}
+bool non_vfio_dev::reset(){
+    return true;
+}
