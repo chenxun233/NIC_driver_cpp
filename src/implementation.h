@@ -7,7 +7,7 @@ typedef std::unique_ptr<basic_dev> dev_ptr_type;
 
 dev_ptr_type create_device(
                             std::string pci_addr,
-                            uint8_t     bar_index,
+                            uint8_t     bar_index_max,
                             uint16_t    num_rx_queues,
                             uint16_t    num_tx_queues,
                             uint16_t    interrupt_timeout_ms

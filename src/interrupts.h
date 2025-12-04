@@ -2,6 +2,9 @@
 #define INTERRUPTS_H
 #include <cstdint>
 #include <memory>
+#include "basic_dev.h"
+#include "memory_op.h"
+
 #define MOVING_AVERAGE_RANGE 5
 #define IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + sizeof(int))
 #define MAX_INTERRUPT_VECTORS 32
@@ -25,32 +28,33 @@ struct interrupt_queues {
 	struct interrupt_moving_avg moving_avg; // The moving average of the hybrid interrupt
 };
 
+struct interrupt_para {
+    basic_para_type&                         basic              ;
+    vfio_fd_type&                            fds                ;
+    uint32_t                                 itr_rate           ;
+    std::unique_ptr<interrupt_queues[]>      interrupt_queues   ;
+    uint8_t                                  interrupt_type     ;
+};
+
 
 class interrupt {
     public:
-        interrupt(
-            int device_fd,int 
-            interrupt_timeout_ms,
-            uint16_t rx_queue_num,
-            uint16_t tx_queue_num);
+        interrupt(basic_para_type& basic_para,vfio_fd_type& fds);
         ~interrupt();
 
     private:
         bool                                    _initialize()                       ;
-        bool                                    _get_interrupt_type()               ;
-        bool                                    _alloc_interrupt_queues()           ;
+        bool                                    _host_setup_IRQ_type()              ;
+        bool                                    _host_alloc_IRQ_queues()            ;
+        bool                                    _host_setup_IRQ_queues()            ;
+
+    private:
         int                                     _vfio_enable_msi()                  ;
         int                                     _vfio_enable_msix(int index)        ;
-        int                                     _vfio_epoll_ctl(int event_fd)                   ;
-        bool                                    _setup_interrupts_queues()          ;
+        int                                     _vfio_epoll_ctl(int event_fd)       ;
+
     private:
-        int                                     m_device_fd                         ; 
-        int                                     m_interrupt_timeout_ms              ;
-        uint32_t                                m_itr_rate                          ;
-        uint16_t                                m_rx_queue_num                      ;
-        uint16_t                                m_tx_queue_num                      ;
-        std::unique_ptr<interrupt_queues[]>     p_interrupt_queues                  ;
-        uint8_t                                 m_interrupt_type                    ;
+        interrupt_para                          m_para                              ;
 
 };
 #endif // INTERRUPTS_H

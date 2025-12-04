@@ -5,7 +5,7 @@ class non_vfio_dev : public basic_dev{
     public:
         non_vfio_dev(
                     std::string pci_addr,
-                    uint8_t     bar_index,
+                    uint8_t     bar_index_max,
                     uint16_t    num_rx_queues,
                     uint16_t    num_tx_queues,
                     uint16_t    interrupt_timeout_ms )          ;

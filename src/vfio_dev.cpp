@@ -10,19 +10,19 @@
 
 vfio_dev::vfio_dev(
                     std::string pci_addr,
-                    uint8_t     bar_index,
+                    uint8_t     bar_index_max,
                     uint16_t    num_rx_queues,
                     uint16_t    num_tx_queues,
                     uint16_t    interrupt_timeout_ms
 ):
 basic_dev(
     pci_addr, 
-    bar_index, 
+    bar_index_max, 
     num_rx_queues, 
     num_tx_queues, 
     interrupt_timeout_ms
 ),
-m_fds{-1, -1, -1, -1}   
+m_fds{-1, -1, -1, -1} 
 {
 };
 
@@ -38,7 +38,8 @@ bool vfio_dev::initialize() {
     this->_get_device_fd()              &&
     this->enable_dma()                  &&
     this->map_bar()                     &&
-    this->set_interrupt_host();            
+    this->set_interrupt_host()          &&
+    this->set_hardware();            
 };
 
 
@@ -157,15 +158,15 @@ bool vfio_dev::_get_device_fd(){
 }
 
 bool vfio_dev::map_bar () {
-    if (m_basic_para.bar_index > VFIO_PCI_BAR5_REGION_INDEX){
-        warn("BAR index %d is out of range", m_basic_para.bar_index);
+    if (m_basic_para.bar_index_max > VFIO_PCI_BAR5_REGION_INDEX){
+        warn("BAR index %d is out of range", m_basic_para.bar_index_max);
         return false;
     }
     if (this->m_fds.device_fd == -1) {
         warn("Device fd is invalid");
         return false;
     }
-    for (int i = 0; i <= m_basic_para.bar_index; i++) {
+    for (int i = 0; i <= m_basic_para.bar_index_max; i++) {
         struct vfio_region_info region_info = {};
         region_info.argsz = sizeof(region_info);
 	    region_info.index = i;
@@ -233,11 +234,11 @@ bool vfio_dev::set_interrupt_host() {
         info("Interrupt is disabled");
         return true;
     }
-    p_interrupt = std::make_unique<interrupt>(
-        this->m_fds.device_fd,
-        this->m_basic_para.interrupt_timeout_ms,
-        this->m_basic_para.num_rx_queues,
-        this->m_basic_para.num_tx_queues
-    );
+    p_interrupt = std::make_unique<interrupt>(m_basic_para, m_fds);
     return true;
+};
+
+bool vfio_dev::set_hardware() {
+    m_hardware_op = std::make_unique<hardware_op>(m_basic_para, m_fds, m_dev_stats);
+    return m_hardware_op->dev_reset_n_init();
 };

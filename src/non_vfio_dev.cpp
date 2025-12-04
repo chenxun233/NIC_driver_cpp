@@ -11,14 +11,14 @@
 
 non_vfio_dev::non_vfio_dev(
                     std::string pci_addr,
-                    uint8_t     bar_index,
+                    uint8_t     bar_index_max,
                     uint16_t    num_rx_queues,
                     uint16_t    num_tx_queues,
                     uint16_t    interrupt_timeout_ms
 ):
 basic_dev(
     pci_addr, 
-    bar_index, 
+    bar_index_max, 
     num_rx_queues, 
     num_tx_queues, 
     interrupt_timeout_ms
@@ -37,7 +37,7 @@ bool non_vfio_dev::initialize() {
 };
 
 bool non_vfio_dev::map_bar () {
-    for (int bar = 0; bar <= m_basic_para.bar_index; ++bar) {
+    for (int bar = 0; bar <= m_basic_para.bar_index_max; ++bar) {
         std::filesystem::path res = std::filesystem::path("/sys/bus/pci/devices")
             / m_basic_para.pci_addr / ("resource" + std::to_string(bar));
         int fd = check_err(::open(res.c_str(), O_RDWR | O_SYNC), "open pci resource");
@@ -54,7 +54,6 @@ bool non_vfio_dev::map_bar () {
         check_err(::close(fd), "close pci resource");
     }   
     return true;
-
 }
 bool non_vfio_dev::remove_ixgbe_driver() {
     std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_basic_para.pci_addr.c_str()/"driver/unbind";
