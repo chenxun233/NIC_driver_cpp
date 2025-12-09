@@ -7,32 +7,31 @@
 #include "log.h"
 #include <limits.h>
 #include <fcntl.h>
-#include "basic_dev.h"
 
-using namespace memory_op;
-
-struct dma_memory_type memory_allocate_dma(struct vfio_fd_type vfio_fds,size_t size, bool require_contiguous){
+struct DmaMemoryPair memory_allocate_dma(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
 	if (vfio_fds.container_fd != -1) {
 		// VFIO == -1 means that there is no VFIO container set, i.e. VFIO / IOMMU is not activated
-		return memory_allocate_via_vfiomap(size, require_contiguous);
+		return memory_allocate_via_vfiomap(vfio_fds, size, require_contiguous);
 	} else {
 		return memory_allocate_via_hugepage(size, require_contiguous);
 	}
 }
 
-struct dma_memory_type memory_op::memory_allocate_via_vfiomap(size_t size, bool require_contiguous){
+struct DmaMemoryPair memory_allocate_via_vfiomap(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
 	debug("allocating dma memory via VFIO");
+	//allocate virtual address
 	void* virt_addr = (void*) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
 	// create IOMMU mapping
-	uint64_t iova = (uint64_t) vfio_map_dma(virt_addr, size);
-	return (struct dma_memory_type){
+	// allocate IO virtual address
+	uint64_t iova = (uint64_t) setup_dma_ret_iova(vfio_fds, virt_addr, size);
+	return (struct DmaMemoryPair){
 		// for VFIO, this needs to point to the device view memory = IOVA!
 		.virt = virt_addr,
 		.phy = iova
 	};
 }
 
-uint64_t memory_op::vfio_map_dma(struct vfio_fd_type vfio_fds,void* virt_addr, size_t size){
+uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t size){
 	uint64_t page_size = get_page_size();
 	uint64_t map_size = size < MIN_DMA_MEMORY ? MIN_DMA_MEMORY : size;
 	map_size = align_up_u64(map_size, page_size);
@@ -45,10 +44,8 @@ uint64_t memory_op::vfio_map_dma(struct vfio_fd_type vfio_fds,void* virt_addr, s
 		error("IOMMU aperture exhausted: need 0x%llx bytes", (unsigned long long) map_size);
 		exit(EXIT_FAILURE);
 	}
-
 	uint64_t iova = next_iova;
 	struct vfio_iommu_type1_dma_map dma_map ={};
-
 	dma_map.vaddr = (uint64_t) virt_addr;
 	dma_map.iova = iova;
 	dma_map.size = map_size;
@@ -61,7 +58,7 @@ uint64_t memory_op::vfio_map_dma(struct vfio_fd_type vfio_fds,void* virt_addr, s
 	return iova;
 }
 
-uint64_t memory_op::get_page_size(){
+uint64_t get_page_size(){
 	long page_size = sysconf(_SC_PAGESIZE);
 	if (page_size <= 0) {
 		page_size = 4096;
@@ -69,7 +66,7 @@ uint64_t memory_op::get_page_size(){
 	return (uint64_t) page_size;
 }
 
-uint64_t memory_op::align_up_u64(uint64_t val, uint64_t align){
+uint64_t align_up_u64(uint64_t val, uint64_t align){
 	if (!align){
 		return val;
 	}
@@ -77,7 +74,7 @@ uint64_t memory_op::align_up_u64(uint64_t val, uint64_t align){
 }
 
 
-struct dma_memory_type memory_op::memory_allocate_via_hugepage(size_t size, bool require_contiguous){
+struct DmaMemoryPair memory_allocate_via_hugepage(size_t size, bool require_contiguous){
 	debug("allocating dma memory via huge page");
 	// round up to multiples of 2 MB if necessary, this is the wasteful part
 	// this could be fixed by co-locating allocations on the same page until a request would be too large
@@ -102,13 +99,13 @@ struct dma_memory_type memory_op::memory_allocate_via_hugepage(size_t size, bool
 	// don't keep it around in the hugetlbfs
 	close(fd);
 	unlink(path);
-	return (struct dma_memory_type){
+	return (struct DmaMemoryPair){
 		.virt = virt_addr,
 		.phy = virt_to_phys(virt_addr)
 	};
 }
 
-uintptr_t memory_op::virt_to_phys(void* virt_addr){
+uintptr_t virt_to_phys(void* virt_addr){
 	long pagesize = sysconf(_SC_PAGESIZE);
 	int fd = check_err(open("/proc/self/pagemap", O_RDONLY), "getting pagemap");
 	// pagemap is an array of pointers for each normal-sized page
@@ -122,4 +119,53 @@ uintptr_t memory_op::virt_to_phys(void* virt_addr){
 	}
 	// bits 0-54 are the page number
 	return (phy & 0x7fffffffffffffULL) * pagesize + ((uintptr_t) virt_addr) % pagesize;
+}
+
+struct MemPool* memory_allocate_mempool(struct VfioFd vfio_fds,uint32_t num_pkt_buf, uint32_t buf_size){
+	buf_size = buf_size ? buf_size : 2048;
+	// require entries that neatly fit into the page size, this makes the memory pool much easier
+	// otherwise our base_virtual_addr + index * size formula would be wrong because we can't cross a page-boundary
+	if ((vfio_fds.container_fd == -1) && HUGE_PAGE_SIZE % buf_size) {
+		error("entry size must be a divisor of the huge page size (%d)", HUGE_PAGE_SIZE);
+	}
+	struct MemPool* mempool = (struct MemPool*) malloc(sizeof(struct MemPool) + num_pkt_buf * sizeof(uint32_t));
+	struct DmaMemoryPair mem = memory_allocate_dma(vfio_fds, buf_size * num_pkt_buf, false);
+	mempool->num_pkt_buf = num_pkt_buf;
+	mempool->buf_size = buf_size;
+	mempool->base_virtual_addr = mem.virt;
+	mempool->free_stack_top = num_pkt_buf;
+	for (uint32_t i = 0; i < num_pkt_buf; i++) {
+		mempool->free_stack[i] = i;
+		// the start virtual address of this pkt_buf
+		struct pkt_buf* buf = (struct pkt_buf*) (((uint8_t*) mempool->base_virtual_addr) + i * buf_size);
+		// the offset is shared by virtual and physical address
+		uintptr_t offset = (uintptr_t) ((uint8_t*) buf - (uint8_t*) mempool->base_virtual_addr);
+		if (vfio_fds.container_fd != -1) {
+			buf->phy_addr = (uintptr_t) mem.phy + offset;
+		} else {
+			buf->phy_addr = virt_to_phys(buf);
+		}
+		buf->mempool_idx = i;
+		buf->mempool = mempool;
+		buf->size = 0;
+	}
+	return mempool;
+}
+
+uint32_t pkt_buf_alloc_batch(struct MemPool* mempool, struct pkt_buf* bufs[], uint32_t num_bufs){
+	if (mempool->free_stack_top < num_bufs) {
+		warn("memory pool %p only has %d free bufs, requested %d", mempool, mempool->free_stack_top, num_bufs);
+		num_bufs = mempool->free_stack_top;
+	}
+	for (uint32_t i = 0; i < num_bufs; i++) {
+		uint32_t buf_id = mempool->free_stack[--mempool->free_stack_top];
+		bufs[i] = (struct pkt_buf*) (((uint8_t*) mempool->base_virtual_addr) + buf_id * mempool->buf_size);
+	}
+	return num_bufs;
+}
+
+struct pkt_buf* pkt_buf_alloc(struct MemPool* mempool){
+	struct pkt_buf* buf = NULL;
+	pkt_buf_alloc_batch(mempool, &buf, 1);
+	return buf;
 }

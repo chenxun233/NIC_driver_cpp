@@ -1,12 +1,11 @@
 #ifndef VFIO_DEV_H
 #define VFIO_DEV_H
 #include "basic_dev.h"
-#include "interrupts.h"
 #include "hardware_op.h"
 
     
 
-class vfio_dev : public basic_dev{
+class vfio_dev : public BasicDev{
     public:
         vfio_dev(
                 std::string pci_addr,
@@ -30,7 +29,7 @@ class vfio_dev : public basic_dev{
         bool reset()                                override            ;
         bool set_interrupt_host()                                       ;
         bool set_hardware()                                             ;
-        vfio_fd_type get_fds(){return m_fds;}                           ;
+        VfioFd get_fds(){return m_fds;}                           ;
     private:        
         bool _get_group_id()                                            ;
         bool _get_group_fd()                                            ;
@@ -38,8 +37,7 @@ class vfio_dev : public basic_dev{
         bool _get_device_fd()                                           ;
         bool _add_group_to_container()                                  ;
     private:        
-        vfio_fd_type                                m_fds               ;
-        std::unique_ptr<interrupt>                  p_interrupt         ;
+        VfioFd                                      m_fds               ;
         std::unique_ptr<hardware_op>                m_hardware_op       ;
 
 };

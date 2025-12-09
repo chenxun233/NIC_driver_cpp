@@ -1,6 +1,6 @@
 #include "basic_dev.h"
 
-basic_dev::basic_dev(
+BasicDev::BasicDev(
                     std::string pci_addr,
                     uint8_t     bar_index_max,
 	                uint16_t    num_rx_queues,
@@ -19,7 +19,7 @@ m_dev_stats({})
         throw std::invalid_argument("Number of RX and TX queues must be greater than 0");
     };
     m_basic_para.pci_addr                   = pci_addr;
-    m_basic_para.bar_index_max                  = bar_index_max;
+    m_basic_para.bar_index_max              = bar_index_max;
     m_basic_para.num_rx_queues              = num_rx_queues;
     m_basic_para.num_tx_queues              = num_tx_queues;
     m_basic_para.interrupt_timeout_ms       = interrupt_timeout_ms;
@@ -29,6 +29,6 @@ m_dev_stats({})
 };
 
 
-basic_para_type basic_dev::get_basic_para(){
+basic_para_type BasicDev::get_basic_para(){
     return m_basic_para;
 }

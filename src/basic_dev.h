@@ -27,23 +27,23 @@ struct basic_para_type{
     mac_address_type            mac_address;
 };
 
-struct vfio_fd_type{
+struct VfioFd{
     int                         container_fd;
     int                         group_id;
     int                         group_fd;
     int                         device_fd;
 };
 
-class basic_dev{
+class BasicDev{
     public:
-        explicit            basic_dev(
+        explicit            BasicDev(
                             	        std::string pci_addr,
                                         uint8_t     bar_index_max,
 	                                    uint16_t    num_rx_queues,
 	                                    uint16_t    num_tx_queues,
                                         uint16_t    interrupt_timeout_ms
         );
-        virtual             ~basic_dev()                   = default   ;
+        virtual             ~BasicDev()                   = default   ;
         virtual bool        initialize()                   = 0         ;
         virtual bool        map_bar ()                     = 0         ;
         virtual bool        enable_dma()                   = 0         ;

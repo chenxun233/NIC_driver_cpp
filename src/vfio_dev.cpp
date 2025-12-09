@@ -15,7 +15,7 @@ vfio_dev::vfio_dev(
                     uint16_t    num_tx_queues,
                     uint16_t    interrupt_timeout_ms
 ):
-basic_dev(
+BasicDev(
     pci_addr, 
     bar_index_max, 
     num_rx_queues, 
@@ -229,14 +229,7 @@ bool vfio_dev::reset(){
     return true;
 }
 
-bool vfio_dev::set_interrupt_host() {
-    if (m_basic_para.interrupt_timeout_ms == 0) {
-        info("Interrupt is disabled");
-        return true;
-    }
-    p_interrupt = std::make_unique<interrupt>(m_basic_para, m_fds);
-    return true;
-};
+
 
 bool vfio_dev::set_hardware() {
     m_hardware_op = std::make_unique<hardware_op>(m_basic_para, m_fds, m_dev_stats);

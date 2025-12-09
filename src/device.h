@@ -7,8 +7,10 @@
 
 #include "log.h"
 #include "memory.h"
+#include "ixgbe_type.h"
 
 #define MAX_QUEUES 64
+
 
 // Forward declare struct to prevent cyclic include with stats.h
 struct device_stats;
@@ -134,6 +136,16 @@ static inline uint8_t read_io8(int fd, size_t offset) {
 	if (pread(fd, &temp, sizeof(temp), offset) != sizeof(temp))
 		error("pread io resource");
 	return temp;
+}
+
+static void set_ivar(uint8_t* addr, int8_t direction, int8_t queue, int8_t msix_vector) {
+	u32 ivar, index;
+	msix_vector |= IXGBE_IVAR_ALLOC_VAL;
+	index = ((16 * (queue & 1)) + (8 * direction));
+	ivar = get_bar_reg32(addr, IXGBE_IVAR(queue >> 1));
+	ivar &= ~(0xFF << index);
+	ivar |= (msix_vector << index);
+	set_bar_reg32(addr, IXGBE_IVAR(queue >> 1), ivar);
 }
 
 #endif // IXY_DEVICE_H

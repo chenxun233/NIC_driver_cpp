@@ -16,7 +16,7 @@ non_vfio_dev::non_vfio_dev(
                     uint16_t    num_tx_queues,
                     uint16_t    interrupt_timeout_ms
 ):
-basic_dev(
+BasicDev(
     pci_addr, 
     bar_index_max, 
     num_rx_queues, 

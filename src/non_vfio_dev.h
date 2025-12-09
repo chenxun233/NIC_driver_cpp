@@ -1,7 +1,7 @@
 #ifndef NON_VFIO_DEV_H
 #define NON_VFIO_DEV_H
 #include "basic_dev.h"
-class non_vfio_dev : public basic_dev{
+class non_vfio_dev : public BasicDev{
     public:
         non_vfio_dev(
                     std::string pci_addr,
