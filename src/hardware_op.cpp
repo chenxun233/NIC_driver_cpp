@@ -20,6 +20,10 @@ m_para{basic_para, fds,0x028,nullptr,0, stats}
 	_initialize_interrupt();
 }
 
+hardware_op::~hardware_op(){
+	// Cleanup interrupt queues
+}
+
 
 bool hardware_op::dev_reset_n_init(){
 	info("Resetting device...");
@@ -51,12 +55,11 @@ bool hardware_op::dev_reset_n_init(){
 
 	this->_enable_interrupt();
 	
-
 	// finally, enable promisc mode by default, it makes testing less annoying
-	ixgbe_set_promisc(&dev->ixy, true);
+	this->_set_promisc(true);
 
 	// wait for some time for the link to come up
-	wait_for_link(dev);
+	this->_wait_for_link();
 	return true;
 }
 
@@ -231,6 +234,7 @@ bool hardware_op::_init_tx(){
 	}
 	// final step: enable DMA
 	set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
+	return true;
 
 }
 bool hardware_op::_prepare_rx_queue(){
@@ -287,8 +291,8 @@ bool hardware_op::_prepare_tx_queue(){
 		set_bar_flags32(m_para.basic.p_bar_addr[0], IXGBE_TXDCTL(queue_id), IXGBE_TXDCTL_ENABLE);
 		wait_set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_TXDCTL(queue_id), IXGBE_TXDCTL_ENABLE);
 		// Implementation of TX queue preparation
-	return true;
 	}
+		return true;
 }
 void hardware_op::_enable_msi_interrupt(uint16_t queue_id){
 	// Step 1: The software driver associates between Tx and Rx interrupt causes and the EICR
@@ -365,11 +369,11 @@ void hardware_op::_enable_msix_interrupt(uint16_t queue_id){
 	debug("Using MSIX interrupts");
 }
 
-void hardware_op::_enable_interrupt(){
+bool hardware_op::_enable_interrupt(){
 	for (uint16_t queue_id = 0; queue_id < m_para.basic.num_rx_queues; queue_id++)
 	{
 		if (!m_para.interrupt_queues[queue_id].interrupt_enabled) {
-		return;
+		return false;
 	}
 	switch (m_para.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX:
@@ -380,9 +384,21 @@ void hardware_op::_enable_interrupt(){
 			break;
 		default:
 			warn("Interrupt type not supported: %d", m_para.interrupt_type);
-			return;
+			return false;
 	}
 	}
+	return true;
+}
+
+bool hardware_op::_set_promisc(bool enable){
+	if (enable) {
+		info("enabling promisc mode");
+		set_bar_flags32(m_para.basic.p_bar_addr[0], IXGBE_FCTRL, IXGBE_FCTRL_MPE | IXGBE_FCTRL_UPE);
+	} else {
+		info("disabling promisc mode");
+		clear_bar_flags32(m_para.basic.p_bar_addr[0], IXGBE_FCTRL, IXGBE_FCTRL_MPE | IXGBE_FCTRL_UPE);
+	}
+	return true;
 }
 
 
@@ -416,7 +432,7 @@ bool hardware_op::_host_setup_IRQ_type(){
     return false;
 }
 bool hardware_op::_host_alloc_IRQ_queues(){
-	this->m_para.interrupt_queues = std::make_unique<interrupt_queues[]>(this->m_para.basic.num_rx_queues);
+	this->m_para.interrupt_queues = std::make_unique<InterruptQueue[]>(this->m_para.basic.num_rx_queues);
 	return true;
 }
 int hardware_op::_vfio_enable_msi(){
@@ -526,3 +542,31 @@ bool hardware_op::_host_setup_IRQ_queues(){
 }
 
 
+uint32_t hardware_op::_get_link_speed(){
+	uint32_t links = get_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_LINKS);
+	if (!(links & IXGBE_LINKS_UP)) {
+		return 0;
+	}
+	switch (links & IXGBE_LINKS_SPEED_82599) {
+		case IXGBE_LINKS_SPEED_100_82599:
+			return 100;
+		case IXGBE_LINKS_SPEED_1G_82599:
+			return 1000;
+		case IXGBE_LINKS_SPEED_10G_82599:
+			return 10000;
+		default:
+			return 0;
+	}
+}
+
+bool hardware_op::_wait_for_link(){
+	info("Waiting for link...");
+	int32_t max_wait = 10000000; // 10 seconds in us
+	uint32_t poll_interval = 100000; // 10 ms in us
+	while (!(_get_link_speed()) && max_wait > 0) {
+		usleep(poll_interval);
+		max_wait -= poll_interval;
+	}
+	info("Link speed is %d Mbit/s", _get_link_speed());
+	return true;
+}

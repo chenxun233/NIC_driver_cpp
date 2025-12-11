@@ -40,6 +40,9 @@ POSSIBILITY OF SUCH DAMAGE.
 // stuff to make it compile without dpdk and ixgbe_osdep.h
 #include <stdbool.h>
 #include <stdint.h>
+#ifdef __linux__
+#include <linux/types.h>
+#endif
 typedef uint8_t u8;
 typedef int8_t s8;
 typedef uint16_t u16;

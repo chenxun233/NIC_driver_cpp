@@ -8,6 +8,12 @@
 #include <limits.h>
 #include <fcntl.h>
 
+static uint64_t MIN_DMA_MEMORY = 4096; // we can not allocate less than page_size memory
+static uint64_t iova_start = 0x10000; //start from a low address
+static uint64_t iova_end = UINT64_MAX; 
+static uint64_t next_iova = 0;
+static uint32_t huge_pg_id;
+
 struct DmaMemoryPair memory_allocate_dma(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
 	if (vfio_fds.container_fd != -1) {
 		// VFIO == -1 means that there is no VFIO container set, i.e. VFIO / IOMMU is not activated
@@ -18,17 +24,17 @@ struct DmaMemoryPair memory_allocate_dma(struct VfioFd vfio_fds,size_t size, boo
 }
 
 struct DmaMemoryPair memory_allocate_via_vfiomap(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
+	(void) require_contiguous;
 	debug("allocating dma memory via VFIO");
 	//allocate virtual address
 	void* virt_addr = (void*) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
 	// create IOMMU mapping
 	// allocate IO virtual address
 	uint64_t iova = (uint64_t) setup_dma_ret_iova(vfio_fds, virt_addr, size);
-	return (struct DmaMemoryPair){
-		// for VFIO, this needs to point to the device view memory = IOVA!
-		.virt = virt_addr,
-		.phy = iova
-	};
+	struct DmaMemoryPair mem;
+	mem.virt = virt_addr;
+	mem.phy = iova;
+	return mem;
 }
 
 uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t size){
@@ -93,16 +99,16 @@ struct DmaMemoryPair memory_allocate_via_hugepage(size_t size, bool require_cont
 	// temporary file, will be deleted to prevent leaks of persistent pages
 	int fd = check_err(open(path, O_CREAT | O_RDWR, S_IRWXU), "open hugetlbfs file, check that /mnt/huge is mounted");
 	check_err(ftruncate(fd, (off_t) size), "allocate huge page memory, check hugetlbfs configuration");
-	void* virt_addr = (void*) check_err(mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_HUGETLB, fd, 0), "mmap hugepage");
+	void* virt_addr = (void*) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_HUGETLB, fd, 0);
 	// never swap out DMA memory
 	check_err(mlock(virt_addr, size), "disable swap for DMA memory");
 	// don't keep it around in the hugetlbfs
 	close(fd);
 	unlink(path);
-	return (struct DmaMemoryPair){
-		.virt = virt_addr,
-		.phy = virt_to_phys(virt_addr)
-	};
+	struct DmaMemoryPair mem;
+	mem.phy = virt_to_phys(virt_addr);
+	mem.virt = virt_addr;
+	return mem;
 }
 
 uintptr_t virt_to_phys(void* virt_addr){
@@ -154,7 +160,7 @@ struct MemPool* memory_allocate_mempool(struct VfioFd vfio_fds,uint32_t num_pkt_
 
 uint32_t pkt_buf_alloc_batch(struct MemPool* mempool, struct pkt_buf* bufs[], uint32_t num_bufs){
 	if (mempool->free_stack_top < num_bufs) {
-		warn("memory pool %p only has %d free bufs, requested %d", mempool, mempool->free_stack_top, num_bufs);
+		warn("memory pool %p only has %d free bufs, requested %d", (void*)mempool, mempool->free_stack_top, num_bufs);
 		num_bufs = mempool->free_stack_top;
 	}
 	for (uint32_t i = 0; i < num_bufs; i++) {

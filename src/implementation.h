@@ -3,9 +3,8 @@
 #include "vfio_dev.h"
 #include "non_vfio_dev.h"
 
-typedef std::unique_ptr<BasicDev> dev_ptr_type;
 
-dev_ptr_type create_device(
+std::unique_ptr<BasicDev> return_p_device(
                             std::string pci_addr,
                             uint8_t     bar_index_max,
                             uint16_t    num_rx_queues,

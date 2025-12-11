@@ -27,7 +27,7 @@ struct interrupt_moving_avg {
 	uint64_t measured_rates[MOVING_AVERAGE_RANGE]; // The moving average window
 };
 
-struct interrupt_queues {
+struct InterruptQueue {
 	int vfio_event_fd; // event fd
 	int vfio_epoll_fd; // epoll fd
 	bool interrupt_enabled; // Whether interrupt for this queue is enabled or not
@@ -40,9 +40,9 @@ struct interrupt_queues {
 
 struct FullPara {
     basic_para_type&                         basic                          ;
-    VfioFd&                                  fds                            ;
+    struct VfioFd                               fds                            ;
     uint32_t                                 itr_rate{0x028}                ;
-    std::unique_ptr<interrupt_queues[]>      interrupt_queues{nullptr}      ;
+    std::unique_ptr<InterruptQueue[]>      interrupt_queues{nullptr}      ;
     uint8_t                                  interrupt_type{0}              ;
     dev_stats_type&                          stats                          ;
 };
@@ -67,7 +67,10 @@ class hardware_op {
         bool                                    _prepare_tx_queue()                 ;
         void                                    _enable_msi_interrupt(uint16_t queue_id);
         void                                    _enable_msix_interrupt(uint16_t queue_id);
-        void                                    _enable_interrupt();
+        bool                                    _enable_interrupt()                 ;
+        bool                                    _set_promisc(bool enable)           ;
+        bool                                    _wait_for_link()                    ;
+        uint32_t                                _get_link_speed()                   ;
     private:
         FullPara                                m_para                              ;      
         QueuesPtr                               m_queues                            ;

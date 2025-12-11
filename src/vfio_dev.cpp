@@ -38,7 +38,6 @@ bool vfio_dev::initialize() {
     this->_get_device_fd()              &&
     this->enable_dma()                  &&
     this->map_bar()                     &&
-    this->set_interrupt_host()          &&
     this->set_hardware();            
 };
 

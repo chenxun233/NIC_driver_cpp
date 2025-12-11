@@ -2,11 +2,11 @@
 #include "log.h"
 
 int main() {
-    dev_ptr_type device = create_device(
+    std::unique_ptr<BasicDev> device = return_p_device(
                                         "0000:04:00.0",
                                         0,
-                                        4,
-                                        4,
+                                        1,
+                                        1,
                                         1000
     );
     if (!device) {

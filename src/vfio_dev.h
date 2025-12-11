@@ -27,9 +27,8 @@ class vfio_dev : public BasicDev{
         bool set_mac_address()                      override            ;
         bool get_mac_address()                      override            ;
         bool reset()                                override            ;
-        bool set_interrupt_host()                                       ;
         bool set_hardware()                                             ;
-        VfioFd get_fds(){return m_fds;}                           ;
+        VfioFd get_fds(){return m_fds;}                                 ;
     private:        
         bool _get_group_id()                                            ;
         bool _get_group_fd()                                            ;
