@@ -202,31 +202,7 @@ bool vfio_dev::enable_dma() {
     return true;
 }
 
-bool vfio_dev::tx_batch() {
 
-    return true;
-}
-bool vfio_dev::rx_batch(){
-    return true;
-}       
-bool vfio_dev::read_stats(){
-    return true;
-}     
-bool vfio_dev::set_promisc(){
-    return true;
-}    
-bool vfio_dev::get_link_speed(){
-    return true;
-} 
-bool vfio_dev::set_mac_address(){
-    return true;
-}
-bool vfio_dev::get_mac_address(){
-    return true;
-}
-bool vfio_dev::reset(){
-    return true;
-}
 
 
 

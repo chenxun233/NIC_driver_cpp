@@ -47,14 +47,6 @@ class BasicDev{
         virtual bool        initialize()                   = 0         ;
         virtual bool        map_bar ()                     = 0         ;
         virtual bool        enable_dma()                   = 0         ;
-        virtual bool        tx_batch()                     = 0         ;
-        virtual bool        rx_batch()                     = 0         ;
-        virtual bool        read_stats()                   = 0         ;
-        virtual bool        set_promisc()                  = 0         ;
-        virtual bool        get_link_speed()               = 0         ;
-        virtual bool        set_mac_address()              = 0         ;
-        virtual bool        get_mac_address()              = 0         ;
-        virtual bool        reset()                        = 0         ;
         basic_para_type     get_basic_para()                           ;                                             
     protected:
         basic_para_type     m_basic_para                               ;

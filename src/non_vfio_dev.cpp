@@ -84,28 +84,3 @@ bool non_vfio_dev::enable_dma() {
 	check_err(close(fd), "close");
     return true;
 };
-
-bool non_vfio_dev::tx_batch() {
-    return true;
-}
-bool non_vfio_dev::rx_batch(){
-    return true;
-}       
-bool non_vfio_dev::read_stats(){
-    return true;
-}     
-bool non_vfio_dev::set_promisc(){
-    return true;
-}    
-bool non_vfio_dev::get_link_speed(){
-    return true;
-} 
-bool non_vfio_dev::set_mac_address(){
-    return true;
-}
-bool non_vfio_dev::get_mac_address(){
-    return true;
-}
-bool non_vfio_dev::reset(){
-    return true;
-}

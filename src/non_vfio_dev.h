@@ -13,14 +13,6 @@ class non_vfio_dev : public BasicDev{
         bool initialize()                           override    ;
         bool map_bar ()                             override    ;
         bool enable_dma()                           override    ;
-        bool tx_batch()                             override    ;
-        bool rx_batch()                             override    ;
-        bool read_stats()                           override    ;
-        bool set_promisc()                          override    ;
-        bool get_link_speed()                       override    ;
-        bool set_mac_address()                      override    ;
-        bool get_mac_address()                      override    ;
-        bool reset()                                override    ;
         bool remove_ixgbe_driver()                              ;
     private:    
 };
