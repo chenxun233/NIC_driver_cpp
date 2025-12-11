@@ -5,8 +5,6 @@
 #include "basic_dev.h"
 #include "memory_op.h"
 
-constexpr int NUM_OF_BUF_RX_QUEUE = 512;
-constexpr int NUM_OF_BUF_TX_QUEUE = 512;
 
 #define MOVING_AVERAGE_RANGE 5
 #define IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + sizeof(int))
@@ -39,12 +37,12 @@ struct InterruptQueue {
 };
 
 struct FullPara {
-    basic_para_type&                         basic                          ;
+    basic_para_type&                            basic                          ;
     struct VfioFd                               fds                            ;
-    uint32_t                                 itr_rate{0x028}                ;
-    std::unique_ptr<InterruptQueue[]>      interrupt_queues{nullptr}      ;
-    uint8_t                                  interrupt_type{0}              ;
-    dev_stats_type&                          stats                          ;
+    uint32_t                                    itr_rate{0x028}                ;
+    std::unique_ptr<InterruptQueue[]>           interrupt_queues{nullptr}      ;
+    uint8_t                                     interrupt_type{0}              ;
+    dev_stats_type&                             stats                          ;
 };
 
 

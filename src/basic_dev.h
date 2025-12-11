@@ -43,10 +43,11 @@ class BasicDev{
 	                                    uint16_t    num_tx_queues,
                                         uint16_t    interrupt_timeout_ms
         );
-        virtual             ~BasicDev()                   = default   ;
+        virtual             ~BasicDev()                    = default   ;
         virtual bool        initialize()                   = 0         ;
         virtual bool        map_bar ()                     = 0         ;
         virtual bool        enable_dma()                   = 0         ;
+        virtual bool        initMemPool()                  = 0         ;    
         basic_para_type     get_basic_para()                           ;                                             
     protected:
         basic_para_type     m_basic_para                               ;

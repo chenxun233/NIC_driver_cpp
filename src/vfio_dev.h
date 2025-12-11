@@ -14,22 +14,27 @@ class vfio_dev : public BasicDev{
                 uint16_t    num_tx_queues,
                 uint16_t    interrupt_timeout_ms
             
-        )                                                               ;
-        ~vfio_dev()                                                     ;
-        bool initialize()                           override            ;
-        bool map_bar ()                             override            ;
-        bool enable_dma()                           override            ;
-        bool set_hardware()                                             ;
-        VfioFd get_fds(){return m_fds;}                                 ;
-    private:        
-        bool _get_group_id()                                            ;
-        bool _get_group_fd()                                            ;
-        bool _get_container_fd()                                        ;
-        bool _get_device_fd()                                           ;
-        bool _add_group_to_container()                                  ;
-    private:        
-        VfioFd                                      m_fds               ;
-        std::unique_ptr<hardware_op>                m_hardware_op       ;
+        )                                                                                           ;
+        ~vfio_dev()                                                                                 ;
+        bool initialize()                           override                                        ;
+        bool map_bar ()                             override                                        ;
+        bool enable_dma()                           override                                        ;
+        bool set_hardware()                                                                         ;
+        bool initMemPool()                          override                                        ;
+        VfioFd get_fds(){return m_fds;}                                                             ;
+    private:                                    
+        bool _get_group_id()                                                                        ;
+        bool _get_group_fd()                                                                        ;
+        bool _get_container_fd()                                                                    ;
+        bool _get_device_fd()                                                                       ;
+        bool _add_group_to_container()                                                              ;
+    private:                            
+        MemPool*                                    p_mempool{nullptr}                              ;        
+        VfioFd                                      m_fds                                           ;
+        std::unique_ptr<hardware_op>                m_hardware_op                                   ;
+
+        uint16_t                                    _calc_ip_checksum  (uint8_t* data, uint32_t len);
+        void                                        _pkt_buf_free      (struct pkt_buf* buf)        ;
 
 };
 

@@ -84,3 +84,8 @@ bool non_vfio_dev::enable_dma() {
 	check_err(close(fd), "close");
     return true;
 };
+
+bool non_vfio_dev::initMemPool() {
+
+    return true;
+};

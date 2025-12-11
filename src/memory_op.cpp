@@ -13,8 +13,16 @@ static uint64_t iova_start = 0x10000; //start from a low address
 static uint64_t iova_end = UINT64_MAX; 
 static uint64_t next_iova = 0;
 static uint32_t huge_pg_id;
+static int 		 call_time;
+static int	   	call_time_memory_allocate_dma = 0;
+static int 		call_time_memory_allocate_mempool = 0;
+
+
+
 
 struct DmaMemoryPair memory_allocate_dma(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
+	call_time_memory_allocate_dma++;
+	debug("entered memory_allocate_dma, call time: %d", call_time_memory_allocate_dma);
 	if (vfio_fds.container_fd != -1) {
 		// VFIO == -1 means that there is no VFIO container set, i.e. VFIO / IOMMU is not activated
 		return memory_allocate_via_vfiomap(vfio_fds, size, require_contiguous);
@@ -34,10 +42,13 @@ struct DmaMemoryPair memory_allocate_via_vfiomap(struct VfioFd vfio_fds,size_t s
 	struct DmaMemoryPair mem;
 	mem.virt = virt_addr;
 	mem.phy = iova;
+	debug("finished allocating dma memory via VFIO");
 	return mem;
 }
 
 uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t size){
+	call_time++;
+	debug("entered setup_dma_ret_iova, call time: %d", call_time);
 	uint64_t page_size = get_page_size();
 	uint64_t map_size = size < MIN_DMA_MEMORY ? MIN_DMA_MEMORY : size;
 	map_size = align_up_u64(map_size, page_size);
@@ -53,14 +64,15 @@ uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t size)
 	uint64_t iova = next_iova;
 	struct vfio_iommu_type1_dma_map dma_map ={};
 	dma_map.vaddr = (uint64_t) virt_addr;
+	// dma_map.vaddr = (uint64_t) 0x100000;
 	dma_map.iova = iova;
 	dma_map.size = map_size;
 	dma_map.argsz = sizeof(dma_map);
 	dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;
-
 	int cfd = vfio_fds.container_fd;
 	check_err(ioctl(cfd, VFIO_IOMMU_MAP_DMA, &dma_map), "IOMMU Map DMA Memory");
 	next_iova = iova + map_size;
+	debug("finished setup_dma_ret_iova, time: %d", call_time);
 	return iova;
 }
 
@@ -128,6 +140,8 @@ uintptr_t virt_to_phys(void* virt_addr){
 }
 
 struct MemPool* memory_allocate_mempool(struct VfioFd vfio_fds,uint32_t num_pkt_buf, uint32_t buf_size){
+	call_time_memory_allocate_mempool++;
+	debug("entered memory_allocate_mempool, call time: %d", call_time_memory_allocate_mempool);
 	buf_size = buf_size ? buf_size : 2048;
 	// require entries that neatly fit into the page size, this makes the memory pool much easier
 	// otherwise our base_virtual_addr + index * size formula would be wrong because we can't cross a page-boundary
@@ -154,7 +168,9 @@ struct MemPool* memory_allocate_mempool(struct VfioFd vfio_fds,uint32_t num_pkt_
 		buf->mempool_idx = i;
 		buf->mempool = mempool;
 		buf->size = 0;
+		buf->data = (uint8_t*) buf + sizeof(struct pkt_buf);
 	}
+	debug("finished memory_allocate_mempool, call time: %d", call_time_memory_allocate_mempool);
 	return mempool;
 }
 
@@ -171,7 +187,8 @@ uint32_t pkt_buf_alloc_batch(struct MemPool* mempool, struct pkt_buf* bufs[], ui
 }
 
 struct pkt_buf* pkt_buf_alloc(struct MemPool* mempool){
-	struct pkt_buf* buf = NULL;
+	struct pkt_buf* buf = nullptr;
 	pkt_buf_alloc_batch(mempool, &buf, 1);
 	return buf;
 }
+

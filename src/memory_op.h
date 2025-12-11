@@ -11,7 +11,11 @@
 #define SIZE_PKT_BUF_HEADROOM 40
 #define MIN_NUM_OF_BUF 4096
 #define PKT_BUF_SIZE 2048
+#define PKT_SIZE 60
 
+
+#define NUM_OF_BUF_RX_QUEUE 512
+#define NUM_OF_BUF_TX_QUEUE 512
 
 
 
@@ -35,7 +39,7 @@ struct MemPool {
     // an index, pointing to the top of the free stack. It tracks how many free pkt buffers are left
     uint32_t                    free_stack_top;
     // the stack contains the entry id, i.e., base_addr + entry_id * buf_size is the address of the buf
-    uint32_t*                    free_stack;
+    uint32_t                    free_stack[NUM_OF_BUF_RX_QUEUE+NUM_OF_BUF_TX_QUEUE];
 };
 
 struct RxRingBuffer{
@@ -47,7 +51,7 @@ struct RxRingBuffer{
     uint16_t rx_index;
     // virtual addresses to map descriptors back to their mbuf for freeing
     // it stores the pointer to each pkt buffer that to be used.
-    void** buf_virtual_addr;
+    void* buf_virtual_addr[NUM_OF_BUF_RX_QUEUE];
 };
 
 struct TxRingBuffer {
@@ -58,7 +62,7 @@ struct TxRingBuffer {
     // position up to which the device has processed
     uint16_t clean_index;
     // virtual addresses to map descriptors back to their mbuf for freeing
-    void** buf_virtual_addr;
+    void* buf_virtual_addr[NUM_OF_BUF_TX_QUEUE];
 };
 
 struct pkt_buf {

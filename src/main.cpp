@@ -13,5 +13,6 @@ int main() {
         warn("Failed to create and initialize device");
         return -1;
     }
+    device->initMemPool();
     return 0;
 }

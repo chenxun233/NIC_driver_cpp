@@ -13,6 +13,7 @@ class non_vfio_dev : public BasicDev{
         bool initialize()                           override    ;
         bool map_bar ()                             override    ;
         bool enable_dma()                           override    ;
+        bool initMemPool()                          override    ;
         bool remove_ixgbe_driver()                              ;
     private:    
 };

@@ -9,6 +9,9 @@
 #include <sys/epoll.h>
 
 const uint64_t INTERRUPT_INITIAL_INTERVAL = 1000 * 1000 * 1000;
+const int MAX_RX_QUEUE_ENTRIES = 4096;
+const int MAX_TX_QUEUE_ENTRIES = 4096;
+
 
 hardware_op::hardware_op(
     basic_para_type& basic_para,
@@ -27,7 +30,8 @@ hardware_op::~hardware_op(){
 
 bool hardware_op::dev_reset_n_init(){
 	info("Resetting device...");
-
+	m_queues.rx = calloc(m_para.basic.num_rx_queues, sizeof(struct RxRingBuffer) + sizeof(void*) * MAX_RX_QUEUE_ENTRIES);
+	m_queues.tx = calloc(m_para.basic.num_tx_queues, sizeof(struct TxRingBuffer) + sizeof(void*) * MAX_TX_QUEUE_ENTRIES);
 	// section 4.6.3.1 - disable all interrupts
 	this->_dev_disable_IRQ();
 	this->_dev_rst_hardware();
@@ -60,6 +64,7 @@ bool hardware_op::dev_reset_n_init(){
 
 	// wait for some time for the link to come up
 	this->_wait_for_link();
+	debug("rx virtual memory address is %p\n",m_queues.rx);
 	return true;
 }
 
@@ -162,8 +167,6 @@ bool hardware_op::_init_rx(){
 		set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_RDBAL(i), (uint32_t) (mem.phy & 0xFFFFFFFFull));
 		set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_RDBAH(i), (uint32_t) (mem.phy >> 32));
 		set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_RDLEN(i), ring_size_bytes);
-		debug("rx ring %d phy addr:  0x%012lX", i, mem.phy);
-		debug("rx ring %d virt addr: 0x%012lX", i, (uintptr_t) mem.virt);
 		// set ring to empty at start
 		set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_RDH(i), 0);
 		set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_RDT(i), 0);
@@ -185,6 +188,7 @@ bool hardware_op::_init_rx(){
 
 	// start RX
 	set_bar_flags32(m_para.basic.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
+	debug("finished RX initialization");
 	return true;
 }
 
@@ -250,6 +254,7 @@ bool hardware_op::_prepare_rx_queue(){
 		int num_of_buf_mempool = NUM_OF_BUF_RX_QUEUE + NUM_OF_BUF_TX_QUEUE;
 		// mempool and the pkt buffers inside are all created.
 		queue->mempool = memory_allocate_mempool(this->m_para.fds,num_of_buf_mempool < MIN_NUM_OF_BUF ? MIN_NUM_OF_BUF : num_of_buf_mempool, PKT_BUF_SIZE);
+		debug("rx queue %d mempool at virtual address %p", queue_id, queue->mempool->base_virtual_addr);
 		if (queue->total_num_of_buf & (queue->total_num_of_buf - 1)) {
 			error("number of queue entries must be a power of 2");
 		}
@@ -274,6 +279,7 @@ bool hardware_op::_prepare_rx_queue(){
 		set_bar_reg32(m_para.basic.p_bar_addr[0], IXGBE_RDT(queue_id), queue->total_num_of_buf - 1);
 		// Implementation of RX queue preparation
 	}
+
 	return true;
 }
 
