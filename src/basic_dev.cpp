@@ -1,17 +1,14 @@
 #include "basic_dev.h"
 
-BasicDev::BasicDev(                                                                          
-                                std::string pci_addr,
-                                uint16_t    num_rx_queues,
-                                uint16_t    num_tx_queues
-                            )
-
+BasicDev::BasicDev(std::string pci_addr,uint8_t max_bar_index):
+m_basic_para()
 {
-    m_basic_para.pci_addr        = pci_addr;
-    m_basic_para.num_rx_queues   = num_rx_queues;
-    m_basic_para.num_tx_queues   = num_tx_queues;
-    m_basic_para.bar_index_max   = 1; // default max bar index
-    m_basic_para.interrupt_timeout_ms = 100; // default interrupt timeout
+    // initialize struct members in the constructor body
+    m_basic_para.pci_addr = pci_addr;
+    m_basic_para.num_rx_queues = 0;
+    m_basic_para.num_tx_queues = 0;
+    m_basic_para.max_bar_index = max_bar_index;
+    m_basic_para.interrupt_timeout_ms = 100;
     for (auto& addr : m_basic_para.p_bar_addr) {
         addr = nullptr;
     }

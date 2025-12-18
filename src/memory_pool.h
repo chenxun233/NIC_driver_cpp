@@ -21,23 +21,23 @@ class MemoryPool{
     public:
         MemoryPool(uint32_t num_buf, uint32_t buf_size, int container_fd = -1);
         ~MemoryPool();
-        bool        allocateMemory();
-        bool        initEachPktBuf();
-        uint32_t    getNumOfBufs() const     { return m_num_bufs; }
-        uint32_t    getBufSize()   const     { return m_buf_size; }
-        void*       getBaseVirtualAddr() const { return p_base_virtual_addr; }
-        uintptr_t   getBaseIOVirtualAddr() const { return m_base_io_virtual_addr; }
-
         struct pkt_buf*             popOnePktBuf();
         void                        freeOnePktBuf(struct pkt_buf* buf);
+    public:
+        uint32_t                    getNumOfBufs() const     { return m_num_bufs; }
+        uint32_t                    getBufSize()   const     { return m_buf_size; }
+        void*                       getBaseVirtualAddr() const { return p_base_virtual_addr; }
+        uintptr_t                   getBaseIOVirtualAddr() const { return m_base_io_virtual_addr; }
     private:
-        uint32_t                                    m_num_bufs{0}                   ;
-        uint32_t                                    m_buf_size{0}                   ;
-        uint64_t                                    m_total_size{0}                 ;
-        uint32_t                                    m_free_stack_top{0}             ;
-        int                                         m_container_fd{-1}              ;
-        void*                                       p_base_virtual_addr{nullptr}    ;
-        uint64_t                                    m_base_io_virtual_addr{0}       ;
-        std::vector<uint32_t>                       m_free_stack                    ;
+        bool                        _allocateMemory();
+        bool                        _initEachPktBuf();
+        uint32_t                    m_num_bufs{0}                   ;
+        uint32_t                    m_buf_size{0}                   ;
+        uint64_t                    m_total_size{0}                 ;
+        uint32_t                    m_free_stack_top{0}             ;
+        int                         m_container_fd{-1}              ;
+        void*                       p_base_virtual_addr{nullptr}    ;
+        uint64_t                    m_base_io_virtual_addr{0}       ;
+        std::vector<uint32_t>       m_free_stack                    ;
 
 };

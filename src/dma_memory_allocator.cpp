@@ -22,20 +22,18 @@ DMAMemoryAllocator::~DMAMemoryAllocator()
 }
 
 DMAMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
-    debug("DMAMemoryAllocator: allocating dma memory of size %zu", size);
     size = _alignUpU64(size, m_page_size);
     //allocate virtual address
     void* virt_addr = _mapVirtualAddr(size);
     // create IOMMU mapping
     // allocate IO virtual address
     uint64_t iova = _mapIOVirtualAddr(virt_addr, size, container_fd);
-    DMAMemoryPair mem;
-    mem.virt = virt_addr;
-    mem.phy = iova;
-    mem.size = size;
-    debug("DMAMemoryAllocator: finished allocating dma memory of size %zu", size);
-    m_allocated_memories.push_back(mem);
-    return  mem;
+    DMAMemoryPair DMA_mem_pair;
+    DMA_mem_pair.virt = virt_addr;
+    DMA_mem_pair.phy = iova;
+    DMA_mem_pair.size = size;
+    m_allocated_memories.push_back(DMA_mem_pair);
+    return  DMA_mem_pair;
 }
 
 void*  DMAMemoryAllocator::_mapVirtualAddr(size_t size){
@@ -69,9 +67,9 @@ uint64_t DMAMemoryAllocator::_mapIOVirtualAddr(void* virt_addr, size_t size, int
 
 bool DMAMemoryAllocator::_unmapVirtualAddr(){
     //unmap all allocated virtual addresses
-    for (const auto& mem : m_allocated_memories) {
-        if (munmap(mem.virt, mem.size) == -1) {
-            error("Failed to unmap virtual address %p: %s", mem.virt, strerror(errno));
+    for (const auto& DMA_mem_pair : m_allocated_memories) {
+        if (munmap(DMA_mem_pair.virt, DMA_mem_pair.size) == -1) {
+            error("Failed to unmap virtual address %p: %s", DMA_mem_pair.virt, strerror(errno));
             return false;
         }
     }

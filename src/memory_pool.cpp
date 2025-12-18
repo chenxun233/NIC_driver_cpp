@@ -18,16 +18,15 @@ MemoryPool::MemoryPool(uint32_t num_bufs, uint32_t buf_size, int container_fd):
     m_container_fd(container_fd)
 {
     m_free_stack.resize(num_bufs);
+    _allocateMemory();
+    _initEachPktBuf();
 }
 
-bool MemoryPool::allocateMemory(){
-    // allocate memory via DMA allocator
-    // Here we use a simple method to allocate memory, which may be improved later.
-    // For example, we can use a singleton DMA memory allocator to manage all DMA memory allocations.
+bool MemoryPool::_allocateMemory(){
     DMAMemoryAllocator& dma_allocator = DMAMemoryAllocator::getInstance();
-    DMAMemoryPair mem = dma_allocator.allocDMAMemory(m_total_size, m_container_fd);
-    p_base_virtual_addr = mem.virt;
-    m_base_io_virtual_addr = mem.phy;
+    DMAMemoryPair DMA_mem_pair = dma_allocator.allocDMAMemory(m_total_size, m_container_fd);
+    p_base_virtual_addr = DMA_mem_pair.virt;
+    m_base_io_virtual_addr = DMA_mem_pair.phy;
     if (!p_base_virtual_addr) {
         error("failed to allocate DMA memory for MemoryPool");
         return false;
@@ -35,7 +34,7 @@ bool MemoryPool::allocateMemory(){
     return true;
 }
 
-bool MemoryPool::initEachPktBuf(){
+bool MemoryPool::_initEachPktBuf(){
     if (!p_base_virtual_addr) {
         error("memory not allocated yet");
         return false;

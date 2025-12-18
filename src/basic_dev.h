@@ -33,7 +33,7 @@ struct interrupt_moving_avg {
 struct InterruptQueue {
 	int vfio_event_fd; // event fd
 	int vfio_epoll_fd; // epoll fd
-	bool interrupt_enabled; // Whether interrupt for this queue is enabled or not
+	bool interrupt_enabled {true}; // Whether interrupt for this queue is enabled or not
 	uint64_t last_time_checked; // Last time the interrupt flag was checked
 	uint64_t instr_counter; // Instruction counter to avoid unnecessary calls to monotonic_time
 	uint64_t rx_pkts; // The number of received packets since the last check
@@ -42,7 +42,7 @@ struct InterruptQueue {
 };
 struct basic_para_type{
 	std::string                 pci_addr;
-    uint8_t                     bar_index_max;
+    uint8_t                     max_bar_index;
 	uint16_t                    num_rx_queues;
 	uint16_t                    num_tx_queues;
     uint16_t                    interrupt_timeout_ms;
@@ -65,25 +65,22 @@ struct interruptPara{
 
 class BasicDev{
     public:
-                            BasicDev(                                                                          
-                                std::string pci_addr,
-                                uint16_t    num_rx_queues,
-                                uint16_t    num_tx_queues
-                            );
+                            BasicDev(std::string pci_addr,uint8_t max_bar_index );
         virtual             ~BasicDev()                    = default   ;
-        virtual bool        getFD()                        = 0         ;
-        virtual bool        mapBAR (uint8_t bar_index)       = 0       ;
-        virtual bool        enableDMA()                    = 0         ;
         virtual bool        initHardware()                  = 0        ;
-        virtual bool        setDMAMemory()                  = 0        ;
-        virtual bool        prepareQueues()                = 0        ;
-        virtual bool        enable_interrupt()              = 0        ;
-        virtual bool        wait_for_link()                 = 0        ;
-        virtual bool        initMemoryPool(uint32_t num_buf, uint32_t buf_size)                = 0        ;
-        virtual bool        setRingBuffers()                 = 0        ;
-        virtual bool        set_promisc(bool enable)         = 0       ;
-        virtual bool        initMemPool()                  = 0         ;    
-        basic_para_type     get_basic_para()                           ;                                             
+        virtual bool        setDescriptorRings()                  = 0        ;
+        virtual bool        enableDevQueues()                = 0        ;
+        virtual bool        enableDevInterrupt()              = 0        ;
+        virtual bool        wait4Link()                 = 0        ;
+        virtual bool        setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, uint32_t buf_size)                 = 0        ;
+        virtual bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)                 = 0        ;
+        virtual bool        setPromisc(bool enable)         = 0       ;
+        virtual bool        initTxDataMemPool()                  = 0         ;    
+        basic_para_type     get_basic_para()                           ; 
+    private:
+        virtual bool        _getFD()                         = 0        ;
+        virtual bool        _mapBAR (uint8_t bar_index)      = 0        ;
+        virtual bool        _enableDMA()                     = 0        ;                                            
     protected:
         basic_para_type     m_basic_para                               ;
         dev_stats_type      m_dev_stats{0,0,0,0}                       ;

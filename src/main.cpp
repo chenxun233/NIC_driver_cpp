@@ -14,22 +14,16 @@
 #define NUM_OF_BUF_TX_QUEUE 512
 
 int main() {
-    std::unique_ptr<BasicDev> device = std::make_unique<VFIODev>(
-                                        "0000:04:00.0",
-                                        1,
-                                        1
-    );
-    device->getFD()         ;
-    device->enableDMA()     ;             
-    device->mapBAR(0)       ;             
+    std::unique_ptr<BasicDev> device = std::make_unique<VFIODev>("0000:04:00.0",0);
+           
+    device->setRxRingBuffers(1,NUM_OF_BUF_RX_QUEUE, PKT_BUF_SIZE);
+    device->setTxRingBuffers(1,NUM_OF_BUF_TX_QUEUE, PKT_BUF_SIZE);
     device->initHardware()  ;
-    device->initMemoryPool(NUM_OF_BUF_RX_QUEUE, PKT_BUF_SIZE);
-    device->setRingBuffers() ;
-    device->setDMAMemory()    ;
-    device->prepareQueues();
-    device->enable_interrupt() ;
-    device->set_promisc(true)  ;
-    device->wait_for_link()     ;            
-    device->initMemPool()   ;
+    device->setDescriptorRings()    ;
+    device->enableDevQueues()     ;
+    device->enableDevInterrupt() ;
+    device->setPromisc(true)  ;
+    device->wait4Link()     ;            
+    device->initTxDataMemPool()   ;
     return 0;
 }
