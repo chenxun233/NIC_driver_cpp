@@ -13,32 +13,28 @@ static uint64_t iova_start = 0x10000; //start from a low address
 static uint64_t iova_end = UINT64_MAX; 
 static uint64_t next_iova = 0;
 static uint32_t huge_pg_id;
-static int 		 call_time;
-static int	   	call_time_memory_allocate_dma = 0;
-static int 		call_time_memory_allocate_mempool = 0;
 
 
 
 
-struct DmaMemoryPair memory_allocate_dma(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
-	call_time_memory_allocate_dma++;
-	debug("entered memory_allocate_dma, call time: %d", call_time_memory_allocate_dma);
+
+struct DmaMemoryPair memory_allocate_dma(struct VfioFd vfio_fds,size_t ring_size, bool require_contiguous){
 	if (vfio_fds.container_fd != -1) {
 		// VFIO == -1 means that there is no VFIO container set, i.e. VFIO / IOMMU is not activated
-		return memory_allocate_via_vfiomap(vfio_fds, size, require_contiguous);
+		return memory_allocate_via_vfiomap(vfio_fds, ring_size, require_contiguous);
 	} else {
-		return memory_allocate_via_hugepage(size, require_contiguous);
+		return memory_allocate_via_hugepage(ring_size, require_contiguous);
 	}
 }
 
-struct DmaMemoryPair memory_allocate_via_vfiomap(struct VfioFd vfio_fds,size_t size, bool require_contiguous){
+struct DmaMemoryPair memory_allocate_via_vfiomap(struct VfioFd vfio_fds,size_t ring_size, bool require_contiguous){
 	(void) require_contiguous;
 	debug("allocating dma memory via VFIO");
 	//allocate virtual address
-	void* virt_addr = (void*) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
+	void* virt_addr = (void*) mmap(NULL, ring_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
 	// create IOMMU mapping
 	// allocate IO virtual address
-	uint64_t iova = (uint64_t) setup_dma_ret_iova(vfio_fds, virt_addr, size);
+	uint64_t iova = (uint64_t) setup_dma_ret_iova(vfio_fds, virt_addr, ring_size);
 	struct DmaMemoryPair mem;
 	mem.virt = virt_addr;
 	mem.phy = iova;
@@ -46,11 +42,9 @@ struct DmaMemoryPair memory_allocate_via_vfiomap(struct VfioFd vfio_fds,size_t s
 	return mem;
 }
 
-uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t size){
-	call_time++;
-	debug("entered setup_dma_ret_iova, call time: %d", call_time);
+uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t ring_size){
 	uint64_t page_size = get_page_size();
-	uint64_t map_size = size < MIN_DMA_MEMORY ? MIN_DMA_MEMORY : size;
+	uint64_t map_size = ring_size < MIN_DMA_MEMORY ? MIN_DMA_MEMORY : ring_size;
 	map_size = align_up_u64(map_size, page_size);
 
 	if (!next_iova) {
@@ -72,7 +66,6 @@ uint64_t setup_dma_ret_iova(struct VfioFd vfio_fds,void* virt_addr, size_t size)
 	int cfd = vfio_fds.container_fd;
 	check_err(ioctl(cfd, VFIO_IOMMU_MAP_DMA, &dma_map), "IOMMU Map DMA Memory");
 	next_iova = iova + map_size;
-	debug("finished setup_dma_ret_iova, time: %d", call_time);
 	return iova;
 }
 
@@ -140,11 +133,7 @@ uintptr_t virt_to_phys(void* virt_addr){
 }
 
 struct MemPool* memory_allocate_mempool(struct VfioFd vfio_fds,uint32_t num_pkt_buf, uint32_t buf_size){
-	call_time_memory_allocate_mempool++;
-	debug("entered memory_allocate_mempool, call time: %d", call_time_memory_allocate_mempool);
 	buf_size = buf_size ? buf_size : 2048;
-	// require entries that neatly fit into the page size, this makes the memory pool much easier
-	// otherwise our base_virtual_addr + index * size formula would be wrong because we can't cross a page-boundary
 	if ((vfio_fds.container_fd == -1) && HUGE_PAGE_SIZE % buf_size) {
 		error("entry size must be a divisor of the huge page size (%d)", HUGE_PAGE_SIZE);
 	}
@@ -170,7 +159,6 @@ struct MemPool* memory_allocate_mempool(struct VfioFd vfio_fds,uint32_t num_pkt_
 		buf->size = 0;
 		buf->data = (uint8_t*) buf + sizeof(struct pkt_buf);
 	}
-	debug("finished memory_allocate_mempool, call time: %d", call_time_memory_allocate_mempool);
 	return mempool;
 }
 
