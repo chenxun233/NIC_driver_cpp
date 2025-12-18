@@ -11,6 +11,9 @@
 #include "ixgbe_type.h"
 #include <sys/eventfd.h>
 #include <sys/epoll.h>
+#include "dma_memory_allocator.h"
+#include "ixgbe_ring_buffer.h"
+#define PKT_SIZE 60
 
 const uint64_t INTERRUPT_INITIAL_INTERVAL = 1000 * 1000 * 1000;
 const int MAX_RX_QUEUE_ENTRIES = 4096;
@@ -35,7 +38,7 @@ static const uint8_t pkt_data[] = {
 	// rest of the payload is zero-filled because mempools guarantee empty bufs
 };
 
-VfioDev::VfioDev(
+VFIODev::VFIODev(
                     std::string pci_addr,
                     uint16_t    num_rx_queues,
                     uint16_t    num_tx_queues
@@ -46,12 +49,13 @@ BasicDev(
             num_tx_queues
         )
 {
+
 }
 
-VfioDev::~VfioDev(){
+VFIODev::~VFIODev(){
 };
 
-bool VfioDev::getFD() {
+bool VFIODev::getFD() {
     return
     this->_get_group_id()               &&
     this->_get_container_fd()           &&
@@ -61,7 +65,7 @@ bool VfioDev::getFD() {
 };
 
 
-bool VfioDev::_get_group_id(){
+bool VFIODev::_get_group_id(){
     std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_basic_para.pci_addr.c_str();
     struct stat st;
     int ret = stat(device_dir.c_str(), &st);
@@ -84,7 +88,7 @@ bool VfioDev::_get_group_id(){
 }
 
 
-bool VfioDev::_get_container_fd(){
+bool VFIODev::_get_container_fd(){
     int cfd = m_fds.container_fd;
     if (cfd == -1) {
         cfd = ::open("/dev/vfio/vfio", O_RDWR);
@@ -98,7 +102,7 @@ bool VfioDev::_get_container_fd(){
     return true;
 }
 
-bool VfioDev::_get_group_fd(){
+bool VFIODev::_get_group_fd(){
     if (this->m_fds.group_id == -1) {
         warn("Group ID is invalid");
         return false;
@@ -114,7 +118,7 @@ bool VfioDev::_get_group_fd(){
     return true;
 }
 
-bool VfioDev::_add_group_to_container(){
+bool VFIODev::_add_group_to_container(){
     if (this->m_fds.container_fd == -1 || this->m_fds.group_fd == -1) {
         warn("Container fd or group fd is invalid");
         return false;
@@ -161,7 +165,7 @@ bool VfioDev::_add_group_to_container(){
 
 }
 
-bool VfioDev::_get_device_fd(){
+bool VFIODev::_get_device_fd(){
     if (this->m_fds.group_fd == -1) {
         warn("Group fd is invalid"); 
         return false;
@@ -176,7 +180,7 @@ bool VfioDev::_get_device_fd(){
     return true;
 }
 
-bool VfioDev::mapBAR (uint8_t bar_index) {
+bool VFIODev::mapBAR (uint8_t bar_index) {
     m_basic_para.bar_index_max = bar_index;
     if (m_basic_para.bar_index_max > VFIO_PCI_BAR5_REGION_INDEX){
         warn("BAR index %d is out of range", m_basic_para.bar_index_max);
@@ -207,7 +211,7 @@ bool VfioDev::mapBAR (uint8_t bar_index) {
 };
 
 
-bool VfioDev::enableDMA() {
+bool VFIODev::enableDMA() {
 	int command_register_offset = 4;
 	// bit 2 is "bus master enable", see PCIe 3.0 specification section 7.5.1.1
 	int bus_master_enable_bit = 2;
@@ -228,10 +232,8 @@ bool VfioDev::enableDMA() {
 
 
 
-bool VfioDev::initHardware() {
+bool VFIODev::initHardware() {
 	info("Resetting device...");
-	m_queues.rx = calloc(m_basic_para.num_rx_queues, sizeof(struct RxRingBuffer) + sizeof(void*) * MAX_RX_QUEUE_ENTRIES);
-	m_queues.tx = calloc(m_basic_para.num_tx_queues, sizeof(struct TxRingBuffer) + sizeof(void*) * MAX_TX_QUEUE_ENTRIES);
 	// section 4.6.3.1 - disable all interrupts
 	this->_dev_disable_IRQ();
 	this->_dev_rst_hardware();
@@ -250,40 +252,66 @@ bool VfioDev::initHardware() {
     return true;
 };
 
-
-bool VfioDev::initRingBuffer() {
-    debug("entered VfioDev::initRingBuffer");
-	this->_init_rx();
-
+bool VFIODev::setDMAMemory() {
+	this->_set_rx_DMA();
 	// section 4.6.8 - init tx
-	this->_init_tx();
+	this->_set_tx_DMA();
+    return true;
+}
 
+bool VFIODev::prepareQueues() {
+    debug("entered VFIODev::prepareQueues");
 	this->_prepare_rx_queue();
 	this->_prepare_tx_queue();
     return true;
 }
 
-bool VfioDev::_read_stats(){
+bool VFIODev::initMemoryPool(uint32_t num_buf, uint32_t buf_size){
+    m_num_rx_bufs = num_buf;
+    m_num_tx_bufs = num_buf;
+    m_buf_rx_size = buf_size;
+    m_buf_tx_size = buf_size;
+    this->m_mempool = new MemoryPool(num_buf, buf_size, m_fds.container_fd);
+    this->m_mempool->allocateMemory();
+    this->m_mempool->initEachPktBuf();
+    return true;
+}
+
+bool VFIODev::setRingBuffers(){
+    for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
+        p_rx_ring_buffers.push_back(new IXGBE_RingBuffer(true));
+        printf(p_rx_ring_buffers[i] == nullptr ? "nullptr\n" : "not null\n");
+        p_rx_ring_buffers[i]->linkMemoryPool(this->m_mempool);
+    }
+    for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
+        p_tx_ring_buffers.push_back(new IXGBE_RingBuffer(false));
+        p_tx_ring_buffers[i]->linkMemoryPool(this->m_mempool);
+    }
+    return true;
+}
+
+bool VFIODev::_read_stats(){
+    info("entered VFIODev::_read_stats");
 	uint32_t rx_pkts = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPRC);
 	uint32_t tx_pkts = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPTC);
 	uint64_t rx_bytes = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GORCL) + (((uint64_t) get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GORCH)) << 32);
 	uint64_t tx_bytes = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GOTCL) + (((uint64_t) get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GOTCH)) << 32);
 
-	m_dev_stats.rx_pkts += rx_pkts;
-	m_dev_stats.tx_pkts += tx_pkts;
+	m_dev_stats.rx_pkts  += rx_pkts;
+	m_dev_stats.tx_pkts  += tx_pkts;
 	m_dev_stats.rx_bytes += rx_bytes;
 	m_dev_stats.tx_bytes += tx_bytes;
 	return true;
 }
 
 
-bool VfioDev::_dev_disable_IRQ(){
+bool VFIODev::_dev_disable_IRQ(){
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_EIMS, 0x00000000);
 	_dev_clear_interrupts();
 	return true;
 }
 
-bool VfioDev::_dev_clear_interrupts(){
+bool VFIODev::_dev_clear_interrupts(){
 	// Clear interrupt mask
 	// Clear interrupt mask to stop from interrupts being generated
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_EIMC, IXGBE_IRQ_CLEAR_MASK);
@@ -291,13 +319,13 @@ bool VfioDev::_dev_clear_interrupts(){
 	return true;
 }
 
-bool VfioDev::_dev_rst_hardware(){
+bool VFIODev::_dev_rst_hardware(){
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
 	wait_clear_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
 	return true;
 }
 
-bool VfioDev::_get_mac_address(){
+bool VFIODev::_get_mac_address(){
 	mac_address_type mac;
 	uint32_t rar_low = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RAL(0));
 	uint32_t rar_high = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RAH(0));
@@ -312,14 +340,14 @@ bool VfioDev::_get_mac_address(){
     return true;
 }
 
-bool VfioDev::_init_eeprom_n_dma(){
+bool VFIODev::_init_eeprom_n_dma(){
 	// section 4.6.3 - Wait for EEPROM auto read completion
 	wait_set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_EEC, IXGBE_EEC_ARD);
 	// section 4.6.3 - Wait for DMA initialization done (RDRXCTL.DMAIDONE)
 	wait_set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDRXCTL, IXGBE_RDRXCTL_DMAIDONE);
     return true;
 }
-bool VfioDev::_init_link_nego(){
+bool VFIODev::_init_link_nego(){
 	// should already be set by the eeprom config, maybe we shouldn't override it here to support weirdo nics?
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC, (get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC) & ~IXGBE_AUTOC_LMS_MASK) | IXGBE_AUTOC_LMS_10G_SERIAL);
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC, (get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC) & ~IXGBE_AUTOC_10G_PMA_PMD_MASK) | IXGBE_AUTOC_10G_XAUI);
@@ -330,16 +358,17 @@ bool VfioDev::_init_link_nego(){
 }
 
 
-bool VfioDev::initMemPool() {
-    debug("entered VfioDev::initMemPool");
+bool VFIODev::initMemPool() {
+    debug("entered VFIODev::initMemPool");
 	const int NUM_BUFS = 2048;
-	struct MemPool* mempool = memory_allocate_mempool(this->m_fds, NUM_BUFS, 0);
-    debug("mempool allocated at virtual address %p", mempool->base_virtual_addr);
+	m_tx_mempool = new MemoryPool(NUM_BUFS, 2048, m_fds.container_fd);
+    m_tx_mempool->allocateMemory();
+    m_tx_mempool->initEachPktBuf();
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
-	struct pkt_buf* bufs[NUM_BUFS] = {nullptr};
+	struct pkt_buf* bufs[NUM_BUFS];
 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-		struct pkt_buf* buf = pkt_buf_alloc(mempool);
+		struct pkt_buf* buf = m_tx_mempool->popOnePktBuf();
 		buf->size = PKT_SIZE;
 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
@@ -347,20 +376,14 @@ bool VfioDev::initMemPool() {
 	}
 	// return them all to the mempool, all future allocations will return bufs with the data set above
 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-		_pkt_buf_free(bufs[buf_id]);
+		m_tx_mempool->freeOnePktBuf(bufs[buf_id]);
 	}
-    this->p_mempool = mempool;
-
 	return true;
 }
 
-void VfioDev::_pkt_buf_free(struct pkt_buf* buf) {
-	struct MemPool* mempool = buf->mempool;
-	mempool->free_stack[mempool->free_stack_top++] = buf->mempool_idx;
-}
 
 
-uint16_t VfioDev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
+uint16_t VFIODev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
 	if (len % 1) error("odd-sized checksums NYI"); // we don't need that
 	uint32_t cs = 0;
 	for (uint32_t i = 0; i < len / 2; i++) {
@@ -373,7 +396,7 @@ uint16_t VfioDev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
 }
 
 
-bool VfioDev::_init_rx(){
+bool VFIODev::_set_rx_DMA(){
 	// make sure that rx is disabled while re-configuring it
 	// the datasheet also wants us to disable some crypto-offloading related rx paths (but we don't care about them)
 	clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
@@ -399,8 +422,8 @@ bool VfioDev::_init_rx(){
 		// a single overflowing queue can fill up the whole buffer and impact operations if not setting this flag
 		set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_SRRCTL(i), IXGBE_SRRCTL_DROP_EN);
 		// setup descriptor ring, see section 7.1.9
-		uint32_t ring_size_bytes = NUM_OF_BUF_RX_QUEUE * sizeof(union ixgbe_adv_rx_desc);
-		DmaMemoryPair mem = memory_allocate_dma(this->m_fds, ring_size_bytes, true);
+		uint32_t ring_size_bytes = m_num_rx_bufs * sizeof(union ixgbe_adv_rx_desc);
+		DMAMemoryPair mem = DMAMemoryAllocator::getInstance().allocDMAMemory(ring_size_bytes, this->m_fds.container_fd);
 		// neat trick from Snabb: initialize to 0xFF to prevent rogue memory accesses on premature DMA activation
 		memset(mem.virt, -1, ring_size_bytes);
 		// tell the device where it can write to (its iova, so its view)
@@ -410,12 +433,14 @@ bool VfioDev::_init_rx(){
 		// set ring to empty at start
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDH(i), 0);
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDT(i), 0);
+
 		// private data for the driver, 0-initialized
-		RxRingBuffer* queue = ((RxRingBuffer*)(m_queues.rx)) + i;
-		queue->total_num_of_buf = NUM_OF_BUF_RX_QUEUE;
-		queue->rx_index = 0;
-		//descriptor shares the same memory as virt
-		queue->descriptors = (union ixgbe_adv_rx_desc*) mem.virt;
+        if (p_rx_ring_buffers[i]== nullptr){
+            error("RX ring buffer %d is nullptr", i);
+        }
+        p_rx_ring_buffers[i]->linkDescriptor2DMAMemory(mem);
+        p_rx_ring_buffers[i]->preparePktBuffer();
+
 	}
 
 	// last step is to set some magic bits mentioned in the last sentence in 4.6.7
@@ -425,14 +450,13 @@ bool VfioDev::_init_rx(){
 	for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
 		clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_DCA_RXCTRL(i), 1 << 12);
 	}
-
 	// start RX
 	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
 	debug("finished RX initialization");
 	return true;
 }
 
-bool VfioDev::_init_tx(){
+bool VFIODev::_set_tx_DMA(){
 	// crc offload and small packet padding
 	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_HLREG0, IXGBE_HLREG0_TXCRCEN | IXGBE_HLREG0_TXPADEN);
 
@@ -451,8 +475,8 @@ bool VfioDev::_init_tx(){
 		debug("initializing tx queue %d", i);
 
 		// setup descriptor ring, see section 7.1.9
-		uint32_t ring_size_bytes = NUM_OF_BUF_TX_QUEUE * sizeof(union ixgbe_adv_tx_desc);
-		DmaMemoryPair mem = memory_allocate_dma(this->m_fds,ring_size_bytes, true);
+		uint32_t ring_size_bytes = m_num_tx_bufs * sizeof(union ixgbe_adv_tx_desc);
+		DMAMemoryPair mem = DMAMemoryAllocator::getInstance().allocDMAMemory(ring_size_bytes, this->m_fds.container_fd);
 		memset(mem.virt, -1, ring_size_bytes);
 		// tell the device where it can write to (its iova, so its view)
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAL(i), (uint32_t) (mem.phy & 0xFFFFFFFFull));
@@ -471,65 +495,32 @@ bool VfioDev::_init_tx(){
 		txdctl |= (36 | (8 << 8) | (4 << 16)); // from DPDK
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXDCTL(i), txdctl);
 
-		// private data for the driver, 0-initialized
-		TxRingBuffer* queue = ((TxRingBuffer*)(m_queues.tx)) + i;
-		queue->total_num_of_buf = NUM_OF_BUF_TX_QUEUE;
-		queue->descriptors = (union ixgbe_adv_tx_desc*) mem.virt;
+        p_tx_ring_buffers[i]->linkDescriptor2DMAMemory(mem);
+        p_tx_ring_buffers[i]->preparePktBuffer();
 	}
 	// final step: enable DMA
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
 	return true;
 
 }
-bool VfioDev::_prepare_rx_queue(){
+bool VFIODev::_prepare_rx_queue(){
 	for (uint16_t queue_id = 0; queue_id < m_basic_para.num_rx_queues; queue_id++){
-		debug("starting rx queue %d", queue_id);
-		struct RxRingBuffer* queue = ((struct RxRingBuffer*)(m_queues.rx)) + queue_id;
-		// 2048 as pktbuf size is strictly speaking incorrect:
-		// we need a few headers (1 cacheline), so there's only 1984 bytes left for the device
-		// but the 82599 can only handle sizes in increments of 1 kb; but this is fine since our max packet size
-		// is the default MTU of 1518
-		// this has to be fixed if jumbo frames are to be supported
-		// mempool should be >= the number of rx and tx descriptors for a forwarding application
-		int num_of_buf_mempool = NUM_OF_BUF_RX_QUEUE + NUM_OF_BUF_TX_QUEUE;
-		// mempool and the pkt buffers inside are all created.
-		queue->mempool = memory_allocate_mempool(this->m_fds,num_of_buf_mempool < MIN_NUM_OF_BUF ? MIN_NUM_OF_BUF : num_of_buf_mempool, PKT_BUF_SIZE);
-		debug("rx queue %d mempool at virtual address %p", queue_id, queue->mempool->base_virtual_addr);
-		if (queue->total_num_of_buf & (queue->total_num_of_buf - 1)) {
-			error("number of queue entries must be a power of 2");
-		}
-		for (int i = 0; i < queue->total_num_of_buf; i++) {
-			volatile union ixgbe_adv_rx_desc* rxd = queue->descriptors + i;
-			struct pkt_buf* buf = pkt_buf_alloc(queue->mempool);
-			if (!buf) {
-				error("failed to allocate rx descriptor");
-			}
-			// where the data buffer is
-			rxd->read.pkt_addr = buf->phy_addr + offsetof(struct pkt_buf, data);
-			rxd->read.hdr_addr = 0;
-			// we need to return the virtual address in the rx function which the descriptor doesn't know by default
-			queue->buf_virtual_addr[i] = buf;
-		}
 		// enable queue and wait if necessary
 		set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXDCTL(queue_id), IXGBE_RXDCTL_ENABLE);
 		wait_set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RXDCTL(queue_id), IXGBE_RXDCTL_ENABLE);
 		// rx queue starts out full
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDH(queue_id), 0);
 		// was set to 0 before in the init function
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDT(queue_id), queue->total_num_of_buf - 1);
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDT(queue_id), m_num_rx_bufs - 1);
 		// Implementation of RX queue preparation
 	}
 
 	return true;
 }
 
-bool VfioDev::_prepare_tx_queue(){
+bool VFIODev::_prepare_tx_queue(){
 	for (uint16_t queue_id = 0; queue_id < m_basic_para.num_tx_queues; queue_id++){
 		debug("starting tx queue %d", queue_id);
-		struct TxRingBuffer* queue = ((struct TxRingBuffer*)(m_queues.tx)) + queue_id;
-		if (queue->total_num_of_buf & (queue->total_num_of_buf - 1)) {
-			error("number of queue entries must be a power of 2");
-		}
 		// tx queue starts out empty
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDH(queue_id), 0);
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(queue_id), 0);
@@ -540,7 +531,7 @@ bool VfioDev::_prepare_tx_queue(){
 	}
 		return true;
 }
-void VfioDev::_enable_msi_interrupt(uint16_t queue_id){
+void VFIODev::_enable_msi_interrupt(uint16_t queue_id){
 	// Step 1: The software driver associates between Tx and Rx interrupt causes and the EICR
 	// register by setting the IVAR[n] registers.
 	set_ivar(m_basic_para.p_bar_addr[0], 0, queue_id, 0);
@@ -569,7 +560,7 @@ void VfioDev::_enable_msi_interrupt(uint16_t queue_id){
 	debug("Using MSI interrupts");
 }
 
-void VfioDev::_enable_msix_interrupt(uint16_t queue_id){
+void VFIODev::_enable_msix_interrupt(uint16_t queue_id){
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
 	// throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
 	uint32_t gpie = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPIE);
@@ -615,7 +606,7 @@ void VfioDev::_enable_msix_interrupt(uint16_t queue_id){
 	debug("Using MSIX interrupts");
 }
 
-bool VfioDev::enable_interrupt(){
+bool VFIODev::enable_interrupt(){
 	for (uint16_t queue_id = 0; queue_id < m_basic_para.num_rx_queues; queue_id++)
 	{
 		if (!m_interrupt_para.interrupt_queues[queue_id].interrupt_enabled) {
@@ -636,7 +627,7 @@ bool VfioDev::enable_interrupt(){
 	return true;
 }
 
-bool VfioDev::set_promisc(bool enable){
+bool VFIODev::set_promisc(bool enable){
 	if (enable) {
 		info("enabling promisc mode");
 		set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_FCTRL, IXGBE_FCTRL_MPE | IXGBE_FCTRL_UPE);
@@ -648,14 +639,16 @@ bool VfioDev::set_promisc(bool enable){
 }
 
 
-bool VfioDev::_initialize_interrupt(){
+bool VFIODev::_initialize_interrupt(){
+    debug("entered VFIODev::_initialize_interrupt");
 	return
 	this->_host_setup_IRQ_type()			&&
 	this->_host_alloc_IRQ_queues()			&&
 	this->_host_setup_IRQ_queues()		;
 }
 
-bool VfioDev::_host_setup_IRQ_type(){
+bool VFIODev::_host_setup_IRQ_type(){
+    debug("entered VFIODev::_host_setup_IRQ_type");
 	if (!m_fds.device_fd) {
 		return false;
 	}
@@ -677,12 +670,13 @@ bool VfioDev::_host_setup_IRQ_type(){
 	}
     return false;
 }
-bool VfioDev::_host_alloc_IRQ_queues(){
+bool VFIODev::_host_alloc_IRQ_queues(){
+    debug("entered VFIODev::_host_alloc_IRQ_queues");
 	this->m_interrupt_para.interrupt_queues.resize(m_basic_para.num_rx_queues);
 	return true;
 }
-int VfioDev::_vfio_enable_msi(){
-	info("Enable MSI Interrupts");
+int VFIODev::_vfio_enable_msi(){
+	debug("Enable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
 	struct vfio_irq_set* irq_set;
 	int* fd_ptr;
@@ -707,7 +701,7 @@ int VfioDev::_vfio_enable_msi(){
 	return event_fd;
 }
 
-int VfioDev::_vfio_enable_msix(int index){
+int VFIODev::_vfio_enable_msix(int index){
 	info("Enable MSIX Interrupts");
 	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
 	struct vfio_irq_set* irq_set;
@@ -739,7 +733,7 @@ int VfioDev::_vfio_enable_msix(int index){
 	return event_fd;
 }
 
-int VfioDev::_vfio_epoll_ctl(int event_fd){
+int VFIODev::_vfio_epoll_ctl(int event_fd){
 	struct epoll_event event;
 	event.events = EPOLLIN;
 	event.data.fd = event_fd;
@@ -754,7 +748,7 @@ int VfioDev::_vfio_epoll_ctl(int event_fd){
 	return epoll_fd;
 }
 
-bool VfioDev::_host_setup_IRQ_queues(){
+bool VFIODev::_host_setup_IRQ_queues(){
 	switch (m_interrupt_para.interrupt_type) {	
 		case VFIO_PCI_MSIX_IRQ_INDEX: {
 			for (uint32_t rx_queue = 0; rx_queue < m_basic_para.num_rx_queues; rx_queue++) {
@@ -788,7 +782,7 @@ bool VfioDev::_host_setup_IRQ_queues(){
 }
 
 
-uint32_t VfioDev::_get_link_speed(){
+uint32_t VFIODev::_get_link_speed(){
 	uint32_t links = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_LINKS);
 	if (!(links & IXGBE_LINKS_UP)) {
 		return 0;
@@ -805,7 +799,7 @@ uint32_t VfioDev::_get_link_speed(){
 	}
 }
 
-bool VfioDev::wait_for_link(){
+bool VFIODev::wait_for_link(){
 	info("Waiting for link...");
 	int32_t max_wait = 10000000; // 10 seconds in us
 	uint32_t poll_interval = 100000; // 10 ms in us

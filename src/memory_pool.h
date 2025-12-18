@@ -29,6 +29,7 @@ class MemoryPool{
         uintptr_t   getBaseIOVirtualAddr() const { return m_base_io_virtual_addr; }
 
         struct pkt_buf*             popOnePktBuf();
+        void                        freeOnePktBuf(struct pkt_buf* buf);
     private:
         uint32_t                                    m_num_bufs{0}                   ;
         uint32_t                                    m_buf_size{0}                   ;

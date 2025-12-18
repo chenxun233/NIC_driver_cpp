@@ -1,8 +1,9 @@
+#pragma once
 #include <cstdint>
 #include <cstddef>
 #include <vector>
 
-struct DmaMemoryPair {
+struct DMAMemoryPair {
     // start of the virtual address
     void*   virt;
     // start of the physical/IO virtual address
@@ -18,8 +19,8 @@ class DMAMemoryAllocator {
             static DMAMemoryAllocator instance; 
             return instance;
         }
-                                    ~DMAMemoryAllocator         ()                                            ;
-        DmaMemoryPair               allocDMAMemory              (size_t size, int container_fd)                         ;
+                                    ~DMAMemoryAllocator         ()                                                      ;
+        DMAMemoryPair               allocDMAMemory              (size_t size, int container_fd)                         ;
 
     private:                    
                                     DMAMemoryAllocator          ()                                                      ;
@@ -30,7 +31,7 @@ class DMAMemoryAllocator {
         bool                        _unmapIOVirtualAddr         ()                                                      ;
     private:                
         uint64_t                    m_page_size                 {2*1024*1024}                                           ;
-        uint64_t                    m_next_iova                 {0x10000000}                                            ;
-        std::vector<DmaMemoryPair>  m_allocated_memories                                                                ;
+        uint64_t                    m_next_iova                 {0x10000}                                               ;
+        std::vector<DMAMemoryPair>  m_allocated_memories                                                                ;
 
 };

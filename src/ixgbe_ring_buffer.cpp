@@ -10,7 +10,7 @@ m_is_rx{is_rx}
 };
 
 
-bool IXGBE_RingBuffer::link2MemoryPool(MemoryPool* const mem_pool){
+bool IXGBE_RingBuffer::linkMemoryPool(MemoryPool* const mem_pool){
 	if (!m_is_rx) {
 		info("TX ring buffer does not need memory pool");
 		return true;
@@ -23,12 +23,12 @@ bool IXGBE_RingBuffer::link2MemoryPool(MemoryPool* const mem_pool){
 	return true;
 };
 
-bool IXGBE_RingBuffer::linkDescriptor2DMAMemory(const DmaMemoryPair& mem){
+bool IXGBE_RingBuffer::linkDescriptor2DMAMemory(const DMAMemoryPair& mem){
 	if (!mem.virt || mem.size == 0) {
 		error("invalid DMA memory provided to RX ring buffer for descriptor ring");
 		return false;
 	}
-	p_descriptors = (volatile union ixgbe_adv_rx_desc*) mem.virt;
+	p_descriptors = (union ixgbe_adv_rx_desc*) mem.virt;
 	return true;
 };
 
@@ -38,7 +38,7 @@ bool IXGBE_RingBuffer::preparePktBuffer(){
 		return true;
 	}
 	if (p_mem_pool == nullptr) {
-		error("memory pool not linked, call link2MemoryPool first");
+		error("memory pool not linked, call linkMemoryPool first");
 		return false;
 	}
 	if (p_descriptors == nullptr) {

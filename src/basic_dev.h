@@ -5,7 +5,6 @@
 #include <vector>
 #include <array>
 #include <memory>
-#include "memory_op.h"
 #include <linux/vfio.h>
 
 #define MOVING_AVERAGE_RANGE 5
@@ -76,10 +75,13 @@ class BasicDev{
         virtual bool        mapBAR (uint8_t bar_index)       = 0       ;
         virtual bool        enableDMA()                    = 0         ;
         virtual bool        initHardware()                  = 0        ;
-        virtual bool        initRingBuffer()                = 0        ;
+        virtual bool        setDMAMemory()                  = 0        ;
+        virtual bool        prepareQueues()                = 0        ;
         virtual bool        enable_interrupt()              = 0        ;
         virtual bool        wait_for_link()                 = 0        ;
-        virtual bool        set_promisc(bool enable)         = 0        ;
+        virtual bool        initMemoryPool(uint32_t num_buf, uint32_t buf_size)                = 0        ;
+        virtual bool        setRingBuffers()                 = 0        ;
+        virtual bool        set_promisc(bool enable)         = 0       ;
         virtual bool        initMemPool()                  = 0         ;    
         basic_para_type     get_basic_para()                           ;                                             
     protected:

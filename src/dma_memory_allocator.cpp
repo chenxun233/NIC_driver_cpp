@@ -21,7 +21,7 @@ DMAMemoryAllocator::~DMAMemoryAllocator()
     _unmapIOVirtualAddr();
 }
 
-DmaMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
+DMAMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
     debug("DMAMemoryAllocator: allocating dma memory of size %zu", size);
     size = _alignUpU64(size, m_page_size);
     //allocate virtual address
@@ -29,7 +29,7 @@ DmaMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
     // create IOMMU mapping
     // allocate IO virtual address
     uint64_t iova = _mapIOVirtualAddr(virt_addr, size, container_fd);
-    DmaMemoryPair mem;
+    DMAMemoryPair mem;
     mem.virt = virt_addr;
     mem.phy = iova;
     mem.size = size;

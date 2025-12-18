@@ -15,7 +15,6 @@ MemoryPool::MemoryPool(uint32_t num_bufs, uint32_t buf_size, int container_fd):
     m_num_bufs(num_bufs),
     m_buf_size(buf_size),
     m_total_size(static_cast<uint64_t>(num_bufs) * static_cast<uint64_t>(buf_size)),
-    m_free_stack_top(num_bufs),
     m_container_fd(container_fd)
 {
     m_free_stack.resize(num_bufs);
@@ -26,7 +25,7 @@ bool MemoryPool::allocateMemory(){
     // Here we use a simple method to allocate memory, which may be improved later.
     // For example, we can use a singleton DMA memory allocator to manage all DMA memory allocations.
     DMAMemoryAllocator& dma_allocator = DMAMemoryAllocator::getInstance();
-    DmaMemoryPair mem = dma_allocator.allocDMAMemory(m_total_size, m_container_fd);
+    DMAMemoryPair mem = dma_allocator.allocDMAMemory(m_total_size, m_container_fd);
     p_base_virtual_addr = mem.virt;
     m_base_io_virtual_addr = mem.phy;
     if (!p_base_virtual_addr) {
@@ -52,6 +51,7 @@ bool MemoryPool::initEachPktBuf(){
         buf->size = 0;
         buf->data = (uint8_t*) buf + sizeof(struct pkt_buf);
     }
+    m_free_stack_top = m_num_bufs;
     return true;
 }
 
@@ -63,6 +63,10 @@ struct pkt_buf* MemoryPool::popOnePktBuf(){
     uint32_t idx = m_free_stack[--m_free_stack_top];
     struct pkt_buf* buf = (struct pkt_buf*) (((uint8_t*) p_base_virtual_addr) + idx * m_buf_size);
     return buf;
+}
+
+void MemoryPool::freeOnePktBuf(struct pkt_buf* buf){
+    m_free_stack[m_free_stack_top++] = buf->idx;
 }
 
 

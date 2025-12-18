@@ -1,3 +1,4 @@
+#pragma once
 #include "memory_pool.h"
 #include "basic_ring_buffer.h"
 #include <memory>
@@ -7,9 +8,10 @@
 
 // a ring buffer is one queue
 class IXGBE_RingBuffer:public BasicRingBuffer {
+    public:
     IXGBE_RingBuffer(bool is_rx)                                                         ;
-    bool link2MemoryPool( MemoryPool* const mem_pool)  override                          ;
-    bool linkDescriptor2DMAMemory(const DmaMemoryPair& mem)                              ;
+    bool linkMemoryPool    (MemoryPool* const mem_pool)  override                       ;
+    bool linkDescriptor2DMAMemory(const DMAMemoryPair& mem)                              ;
     bool preparePktBuffer()                                                              ; 
 
     private:
