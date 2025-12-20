@@ -23,6 +23,10 @@ MemoryPool::MemoryPool(uint32_t num_bufs, uint32_t buf_size, int container_fd):
 }
 
 bool MemoryPool::_allocateMemory(){
+    if (m_container_fd<=0) {
+        error("No valid container fd provided, DMA memory may not be IOMMU mapped");
+        return false;
+    }
     DMAMemoryAllocator& dma_allocator = DMAMemoryAllocator::getInstance();
     DMAMemoryPair DMA_mem_pair = dma_allocator.allocDMAMemory(m_total_size, m_container_fd);
     p_base_virtual_addr = DMA_mem_pair.virt;
@@ -54,7 +58,7 @@ bool MemoryPool::_initEachPktBuf(){
     return true;
 }
 
-struct pkt_buf* MemoryPool::popOnePktBuf(){
+struct pkt_buf* MemoryPool::takeOutPktBuf(){
     if (m_free_stack_top == 0) {
         warn("no free pkt_buf available");
         return nullptr;
@@ -64,7 +68,7 @@ struct pkt_buf* MemoryPool::popOnePktBuf(){
     return buf;
 }
 
-void MemoryPool::freeOnePktBuf(struct pkt_buf* buf){
+void MemoryPool::pushBackPktBuf(struct pkt_buf* buf){
     m_free_stack[m_free_stack_top++] = buf->idx;
 }
 

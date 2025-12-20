@@ -6,19 +6,24 @@
 #include <vector>
 
 
-// a ring buffer is one queue
-class IXGBE_RingBuffer:public BasicRingBuffer {
+
+class IXGBE_RxRingBuffer:public RxRingBuffer {
     public:
-    IXGBE_RingBuffer                (bool is_rx)                                         ;
-    bool linkMemoryPool             (MemoryPool* const mem_pool)  override               ;
-    bool allocDMAMem2DescRing       (const DMAMemoryPair& DMA_mem_pair)                  ;
-
-
+        IXGBE_RxRingBuffer          (){}                                               ;
+        ~IXGBE_RxRingBuffer         (){}                                               ;
+        bool linkMemoryPool         (MemoryPool* const mem_pool)  override               ;
+        bool allocDMAMem2DescRing   (const DMAMemoryPair& DMA_mem_pair)    override      ;
     private:
-        bool _linkDescWithPKTBuf()                                                       ; 
-        bool                                            m_is_rx{true}                    ;
-        MemoryPool*                                     p_mem_pool{nullptr}              ;
-        std::vector<void*>                              v_buf_virtual_addr               ;
-        volatile union ixgbe_adv_rx_desc*               p_descriptors                    ;
+        bool _linkDescWithPKTBuf    ()               override                            ; 
+        volatile union ixgbe_adv_rx_desc*               _p_descriptors                    ;
+};
 
+
+class IXGBE_TxRingBuffer:public TxRingBuffer {
+    public:
+        IXGBE_TxRingBuffer          (){}                                               ;
+        ~IXGBE_TxRingBuffer         (){}                                               ;
+        bool allocDMAMem2DescRing   (const DMAMemoryPair& DMA_mem_pair)    override      ;
+    private:
+        volatile union ixgbe_adv_rx_desc*               _p_descriptors                    ;
 };

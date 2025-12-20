@@ -15,9 +15,6 @@
 #include "ixgbe_ring_buffer.h"
 #define PKT_SIZE 60
 
-const uint64_t INTERRUPT_INITIAL_INTERVAL = 1000 * 1000 * 1000;
-const int MAX_RX_QUEUE_ENTRIES = 4096;
-const int MAX_TX_QUEUE_ENTRIES = 4096;
 
 static const uint8_t pkt_data[] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // dst MAC
@@ -227,7 +224,7 @@ bool VFIODev::_enableDMA() {
 
 
 
-bool VFIODev::initHardware() {
+bool VFIODev::initHardware(const int interrupt_interval) {
 	info("Resetting device...");
 	// section 4.6.3.1 - disable all interrupts
 	this->_dev_disable_IRQ();
@@ -243,7 +240,7 @@ bool VFIODev::initHardware() {
 	// section 4.6.5 - statistical counters
 	// reset-on-read registers, just read them once
 	this->_read_stats();
-    this->_initialize_interrupt();
+    this->_initialize_interrupt(interrupt_interval);
 	success("Hardware initialized");
     return true;
 };
@@ -277,7 +274,7 @@ bool VFIODev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, uint32_t
     m_buf_rx_size = buf_size;
     for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
 		p_mempool.push_back(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
-        p_rx_ring_buffers.push_back(new IXGBE_RingBuffer(true));
+        p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(p_mempool[i]);
 		success("Linked memory pool to RX ring buffer %d", i);
     }
@@ -289,7 +286,7 @@ bool VFIODev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t
     m_num_tx_bufs = num_buf;
     m_buf_tx_size = buf_size;
     for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
-        p_tx_ring_buffers.push_back(new IXGBE_RingBuffer(false));
+        p_tx_ring_buffers.push_back(new IXGBE_TxRingBuffer);
     }
     return true;
 }
@@ -370,7 +367,7 @@ bool VFIODev::initTxDataMemPool() {
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
 	struct pkt_buf* bufs[NUM_BUFS];
 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-		struct pkt_buf* buf = p_tx_mempool->popOnePktBuf();
+		struct pkt_buf* buf = p_tx_mempool->takeOutPktBuf();
 		buf->size = PKT_SIZE;
 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
@@ -378,7 +375,7 @@ bool VFIODev::initTxDataMemPool() {
 	}
 	// return them all to the mempool, all future allocations will return bufs with the data set above
 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-		p_tx_mempool->freeOnePktBuf(bufs[buf_id]);
+		p_tx_mempool->pushBackPktBuf(bufs[buf_id]);
 	}
 	return true;
 }
@@ -657,12 +654,12 @@ bool VFIODev::setPromisc(bool enable){
 }
 
 
-bool VFIODev::_initialize_interrupt(){
+bool VFIODev::_initialize_interrupt(const int &interrupt_interval){
     debug("entered VFIODev::_initialize_interrupt");
 	return
 	this->_getDevIRQType()				&&
 	this->_allocIRQQueues()				&&
-	this->_setupIRQQueues()				;
+	this->_setupIRQQueues(interrupt_interval);
 }
 
 bool VFIODev::_getDevIRQType(){
@@ -769,7 +766,7 @@ int VFIODev::_vfio_epoll_ctl(int event_fd){
 	return epoll_fd;
 }
 
-bool VFIODev::_setupIRQQueues(){
+bool VFIODev::_setupIRQQueues(const int &interrupt_interval){
 	switch (m_interrupt_para.interrupt_type) {	
 		case VFIO_PCI_MSIX_IRQ_INDEX: {
 			for (uint32_t rx_queue = 0; rx_queue < m_basic_para.num_rx_queues; rx_queue++) {
@@ -779,7 +776,7 @@ bool VFIODev::_setupIRQQueues(){
 				m_interrupt_para.interrupt_queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
 				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.length = 0;
 				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.index = 0;
-				m_interrupt_para.interrupt_queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
+				m_interrupt_para.interrupt_queues[rx_queue].interval = interrupt_interval;
 			}
 			break;
 		}
@@ -791,7 +788,7 @@ bool VFIODev::_setupIRQQueues(){
 				m_interrupt_para.interrupt_queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
 				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.length = 0;
 				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.index = 0;
-				m_interrupt_para.interrupt_queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
+				m_interrupt_para.interrupt_queues[rx_queue].interval = interrupt_interval;
 			}
 			break;
 		}

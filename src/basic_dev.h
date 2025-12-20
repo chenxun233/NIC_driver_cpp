@@ -67,7 +67,7 @@ class BasicDev{
     public:
                             BasicDev(std::string pci_addr,uint8_t max_bar_index );
         virtual             ~BasicDev()                    = default   ;
-        virtual bool        initHardware()                  = 0        ;
+        virtual bool        initHardware(const int interrupt_interval)                  = 0        ;
         virtual bool        setDescriptorRings()                  = 0        ;
         virtual bool        enableDevQueues()                = 0        ;
         virtual bool        enableDevInterrupt()              = 0        ;

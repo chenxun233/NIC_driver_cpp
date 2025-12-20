@@ -16,14 +16,14 @@ class VFIODev : public BasicDev{
         VFIODev(std::string pci_addr, uint8_t max_bar_index)                                                       ;
         ~VFIODev()                                                                                                  ;
 
-        bool        initHardware()                                          override                                 ;
-        bool        setDescriptorRings()                                          override                                 ;
+        bool        initHardware(const int interrupt_interval)                override                                 ;
+        bool        setDescriptorRings()                                      override                                 ;
         bool        enableDevQueues()                                         override                                 ;
         bool        enableDevInterrupt()                                      override                                 ;
         bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override         ;
         bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override         ;
-        bool        initTxDataMemPool()                                           override                                 ;
-        bool        setPromisc(bool enable)                                override                                 ;
+        bool        initTxDataMemPool()                                       override                                 ;
+        bool        setPromisc(bool enable)                             override                                 ;
         bool        wait4Link()                                         override                                 ;
     private:
         bool        _getFD()                                                 override                                 ;
@@ -43,31 +43,30 @@ class VFIODev : public BasicDev{
         bool        _init_link_nego()                                                      ;
         bool        _read_stats()                                                          ;
     private:
-        bool        _setRxDescriptorRing()                                                         ;
-        bool        _setTxDescriptorRing()                                                         ;
+        bool        _setRxDescriptorRing()                                                 ;
+        bool        _setTxDescriptorRing()                                                 ;
         bool        _enableDevRxQueue()                                                    ;
         bool        _enableDevTxQueue()                                                    ;
-        void        _enableDevMSIInterrupt(uint16_t queue_id)                               ;
-        void        _enableDevMSIxInterrupt(uint16_t queue_id)                              ;
+        void        _enableDevMSIInterrupt(uint16_t queue_id)                              ;
+        void        _enableDevMSIxInterrupt(uint16_t queue_id)                             ;
         uint32_t    _get_link_speed()                                                      ;
-        bool        _initialize_interrupt()                                                ;
-        bool        _getDevIRQType()                                                 ;
-        bool        _allocIRQQueues()                                               ;
-        bool        _setupIRQQueues()                                               ;
-        int         _injectEventFdToVFIODev_msi()                                                     ;
-        int         _injectEventFdToVFIODev_msix(int index)                                           ;
+        bool        _initialize_interrupt(const int &interrupt_interval)                   ;
+        bool        _getDevIRQType()                                                       ;
+        bool        _allocIRQQueues()                                                      ;
+        bool        _setupIRQQueues(const int &interrupt_interval)                         ;
+        int         _injectEventFdToVFIODev_msi()                                          ;
+        int         _injectEventFdToVFIODev_msix(int index)                                ;
         int         _vfio_epoll_ctl(int event_fd)                                          ;
         uint16_t    _calc_ip_checksum  (uint8_t* data, uint32_t len)                       ;
     private:
-        uint32_t                        m_num_rx_bufs{0}                                        ;   
-        uint32_t                        m_buf_rx_size{0}                                        ;
-        uint32_t                        m_num_tx_bufs{0}                                    ;
-        uint32_t                        m_buf_tx_size{0}                                        ;
-        std::vector<MemoryPool*>        p_mempool                                           ;
+        uint32_t                        m_num_rx_bufs{0}                                   ;   
+        uint32_t                        m_buf_rx_size{0}                                   ;
+        uint32_t                        m_num_tx_bufs{0}                                   ;
+        uint32_t                        m_buf_tx_size{0}                                   ;
+        std::vector<MemoryPool*>        p_mempool                                          ;
         MemoryPool*                     p_tx_mempool{nullptr}                              ;
-        // MemPool*                     p_mempool{nullptr}                                 ;
-        std::vector<IXGBE_RingBuffer*>  p_rx_ring_buffers                                    ;
-        std::vector<IXGBE_RingBuffer*>  p_tx_ring_buffers                                    ;     
+        std::vector<IXGBE_RxRingBuffer*>  p_rx_ring_buffers                                  ;
+        std::vector<IXGBE_TxRingBuffer*>  p_tx_ring_buffers                                  ;     
         QueuesPtr                       m_queues;
 
 };
