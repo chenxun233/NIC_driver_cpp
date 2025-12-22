@@ -13,16 +13,18 @@ struct QueuesPtr {
 
 class VFIODev : public BasicDev{
     public:
-        VFIODev(std::string pci_addr, uint8_t max_bar_index)                                                       ;
-        ~VFIODev()                                                                                                  ;
+        VFIODev(std::string pci_addr, uint8_t max_bar_index)                                                     ;
+        ~VFIODev()                                                                                               ;
+        bool        initHardware(const int interrupt_interval)                override                           ;
+        bool        setDescriptorRings()                                      override                           ;
+        bool        enableDevQueues()                                         override                           ;
+        bool        enableDevInterrupt()                                      override                           ;
+        bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override    ;
+        bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override    ;
+        bool        sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)                     override    ;
+        bool        fillTxMemPool(uint32_t num_buf)                      override                           ;
+        void        send()                                    override                           ;
 
-        bool        initHardware(const int interrupt_interval)                override                                 ;
-        bool        setDescriptorRings()                                      override                                 ;
-        bool        enableDevQueues()                                         override                                 ;
-        bool        enableDevInterrupt()                                      override                                 ;
-        bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override         ;
-        bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override         ;
-        bool        initTxDataMemPool()                                       override                                 ;
         bool        setPromisc(bool enable)                             override                                 ;
         bool        wait4Link()                                         override                                 ;
     private:
@@ -41,7 +43,8 @@ class VFIODev : public BasicDev{
         bool        _get_mac_address()                                                     ;
         bool        _init_eeprom_n_dma()                                                   ;
         bool        _init_link_nego()                                                      ;
-        bool        _read_stats()                                                          ;
+        DevStatus    _readStatus()                                      override      ;
+        void        _initStatus(DevStatus* stats)                       override      ;
     private:
         bool        _setRxDescriptorRing()                                                 ;
         bool        _setTxDescriptorRing()                                                 ;
@@ -63,11 +66,11 @@ class VFIODev : public BasicDev{
         uint32_t                        m_buf_rx_size{0}                                   ;
         uint32_t                        m_num_tx_bufs{0}                                   ;
         uint32_t                        m_buf_tx_size{0}                                   ;
-        std::vector<MemoryPool*>        p_mempool                                          ;
-        MemoryPool*                     p_tx_mempool{nullptr}                              ;
+        // std::vector<MemoryPool*>        p_mempool                                          ;
+        MemoryPool*                       p_tx_mempool{nullptr}                              ;
         std::vector<IXGBE_RxRingBuffer*>  p_rx_ring_buffers                                  ;
-        std::vector<IXGBE_TxRingBuffer*>  p_tx_ring_buffers                                  ;     
-        QueuesPtr                       m_queues;
+        std::vector<IXGBE_TxRingBuffer*>  p_tx_ring_buffers                                  ;
+        uint32_t                          m_used_tx_buf_num{0}                               ;     
 
 };
 

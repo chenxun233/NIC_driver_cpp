@@ -24,19 +24,21 @@ DMAMemoryAllocator::~DMAMemoryAllocator()
 DMAMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
     size = _alignUpU64(size, m_page_size);
     //allocate virtual address
-    void* virt_addr = _mapVirtualAddr(size);
+    void* virt_addr = _allocDMAVirtualAddr(size);
     // create IOMMU mapping
     // allocate IO virtual address
-    uint64_t iova = _mapIOVirtualAddr(virt_addr, size, container_fd);
+    uint64_t iova = m_next_iova;
+    // bind the two addresses.
+    _bindIOVAWithVirtAddr(virt_addr, iova, size, container_fd);
     DMAMemoryPair DMA_mem_pair;
     DMA_mem_pair.virt = virt_addr;
-    DMA_mem_pair.phy = iova;
+    DMA_mem_pair.iova = iova;
     DMA_mem_pair.size = size;
     m_allocated_memories.push_back(DMA_mem_pair);
     return  DMA_mem_pair;
 }
 
-void*  DMAMemoryAllocator::_mapVirtualAddr(size_t size){
+void*  DMAMemoryAllocator::_allocDMAVirtualAddr(size_t size){
     void* virtual_address = (void*) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
     if (virtual_address == MAP_FAILED) {
         error("Failed to mmap DMA memory using huge page. Huge page may have not been enabled. The error code is %s", strerror(errno));
@@ -45,14 +47,15 @@ void*  DMAMemoryAllocator::_mapVirtualAddr(size_t size){
     return virtual_address;
 }
 
-uint64_t DMAMemoryAllocator::_mapIOVirtualAddr(void* virt_addr, size_t size, int container_fd){
+// this function makes the physical address in DRAM shared both by virtual address space and IOVA. one is for CPU access, the other is for device DMA access.
+bool DMAMemoryAllocator::_bindIOVAWithVirtAddr(void* virt_addr, uint64_t iova, size_t size, int container_fd){
 	m_next_iova = _alignUpU64(m_next_iova, m_page_size);
 	
 	if (m_next_iova > iova_end || m_next_iova + size - 1 > iova_end) {
 		error("IOMMU aperture exhausted: need 0x%llx bytes", (unsigned long long) size);
 		exit(EXIT_FAILURE);
 	}
-	uint64_t iova = m_next_iova;
+	
 	struct vfio_iommu_type1_dma_map dma_map ={};
 	dma_map.vaddr = (uint64_t) virt_addr;
 	// dma_map.vaddr = (uint64_t) 0x100000;
@@ -62,7 +65,7 @@ uint64_t DMAMemoryAllocator::_mapIOVirtualAddr(void* virt_addr, size_t size, int
 	dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;
 	check_err(ioctl(container_fd, VFIO_IOMMU_MAP_DMA, &dma_map), "IOMMU Map DMA Memory");
 	m_next_iova = iova + size;
-	return iova;
+	return true;
 }
 
 bool DMAMemoryAllocator::_unmapVirtualAddr(){

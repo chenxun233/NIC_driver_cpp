@@ -2,10 +2,7 @@
 #include "vfio_dev.h"
 #include "log.h"
 
-#define HUGE_PAGE_BITS 21
-#define HUGE_PAGE_SIZE (1 << HUGE_PAGE_BITS) // 2_097_152 = 2MiB
-#define SIZE_PKT_BUF_HEADROOM 40
-#define MIN_NUM_OF_BUF 4096
+
 #define PKT_BUF_SIZE 2048
 #define PKT_SIZE 60
 
@@ -24,6 +21,8 @@ int main() {
     device->enableDevInterrupt()    ;
     device->setPromisc(true)        ;
     device->wait4Link()             ;            
-    device->initTxDataMemPool()     ;
+    device->fillTxMemPool(NUM_OF_BUF_TX_QUEUE);
+    device->send();
+    debug("__");
     return 0;
 }

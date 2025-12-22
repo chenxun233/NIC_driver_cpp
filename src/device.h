@@ -13,7 +13,6 @@
 
 
 // Forward declare struct to prevent cyclic include with stats.h
-struct device_stats;
 
 struct device_info {
 	uint16_t vendor_id;

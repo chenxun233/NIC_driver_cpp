@@ -7,7 +7,7 @@ struct DMAMemoryPair {
     // start of the virtual address
     void*   virt;
     // start of the physical/IO virtual address
-    uint64_t phy;
+    uint64_t iova;
     size_t  size;
 };
 
@@ -25,8 +25,8 @@ class DMAMemoryAllocator {
     private:                    
                                     DMAMemoryAllocator          ()                                                      ;
         uint64_t                    _alignUpU64                 (uint64_t value, uint64_t alignment)                    ;
-        void*                       _mapVirtualAddr             (size_t ring_size)                                      ;
-        uint64_t                    _mapIOVirtualAddr           (void* virt_addr, size_t ring_size, int container_fd)   ;
+        void*                       _allocDMAVirtualAddr        (size_t ring_size)                                      ;
+        bool                        _bindIOVAWithVirtAddr       (void* virt_addr, uint64_t iova, size_t ring_size, int container_fd)   ;
         bool                        _unmapVirtualAddr           ()                                                      ;
         bool                        _unmapIOVirtualAddr         ()                                                      ;
     private:                

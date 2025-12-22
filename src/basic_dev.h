@@ -17,7 +17,7 @@ struct __attribute__((__packed__)) mac_address_type {
 	uint8_t	addr[6];
 };
 
-struct dev_stats_type {
+struct DevStatus {
     uint64_t    rx_pkts;
     uint64_t    tx_pkts;
     uint64_t    rx_bytes;
@@ -41,51 +41,64 @@ struct InterruptQueue {
 	struct interrupt_moving_avg moving_avg; // The moving average of the hybrid interrupt
 };
 struct basic_para_type{
-	std::string                 pci_addr;
-    uint8_t                     max_bar_index;
-	uint16_t                    num_rx_queues;
-	uint16_t                    num_tx_queues;
-    uint16_t                    interrupt_timeout_ms;
+	std::string   pci_addr;
+    uint8_t    max_bar_index;
+	uint16_t   num_rx_queues;
+	uint16_t   num_tx_queues;
+    uint16_t   interrupt_timeout_ms;
     std::array<uint8_t*,6>      p_bar_addr;
     mac_address_type            mac_address;
 };
 
 struct VfioFd{
-    int                         container_fd;
-    int                         group_id;
-    int                         group_fd;
-    int                         device_fd;
+    int        container_fd;
+    int        group_id;
+    int        group_fd;
+    int        device_fd;
 };
 
 struct interruptPara{
-    uint32_t                                    itr_rate                ;
-    std::vector<InterruptQueue>                 interrupt_queues        ;
-    uint8_t                                     interrupt_type          ;
+    uint32_t  itr_rate  ;
+    std::vector<InterruptQueue>   interrupt_queues        ;
+    uint8_t   interrupt_type          ;
 };
 
 class BasicDev{
     public:
-                            BasicDev(std::string pci_addr,uint8_t max_bar_index );
-        virtual             ~BasicDev()                    = default   ;
-        virtual bool        initHardware(const int interrupt_interval)                  = 0        ;
-        virtual bool        setDescriptorRings()                  = 0        ;
-        virtual bool        enableDevQueues()                = 0        ;
-        virtual bool        enableDevInterrupt()              = 0        ;
-        virtual bool        wait4Link()                 = 0        ;
-        virtual bool        setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, uint32_t buf_size)                 = 0        ;
-        virtual bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)                 = 0        ;
-        virtual bool        setPromisc(bool enable)         = 0       ;
-        virtual bool        initTxDataMemPool()                  = 0         ;    
-        basic_para_type     get_basic_para()                           ; 
+           BasicDev(std::string pci_addr,uint8_t max_bar_index )            ;
+        virtual             ~BasicDev()   = default                         ;
+        virtual bool        initHardware(const int interrupt_interval)  = 0 ;
+        virtual bool        setDescriptorRings()                        = 0 ;
+        virtual bool        enableDevQueues()                           = 0 ;
+        virtual bool        enableDevInterrupt()                        = 0 ;
+        virtual bool        wait4Link()                                 = 0 ;
+        virtual bool        setRxRingBuffers(uint16_t num_rx_queues,
+                                            uint32_t num_buf, 
+                                            uint32_t buf_size)          = 0 ;
+        virtual bool        setTxRingBuffers(uint16_t num_tx_queues,
+                                            uint32_t num_buf, 
+                                            uint32_t buf_size)          = 0 ;
+        virtual bool        setPromisc(bool enable)                     = 0 ;
+        virtual bool        sendOnQueue(uint8_t* p_data, 
+                                        size_t size, 
+                                        uint16_t queue_id)              = 0 ;
+        virtual bool        fillTxMemPool(uint32_t num_buf)        = 0 ;
+        virtual void        send()                      = 0 ;
+        basic_para_type     get_basic_para()                                ; 
     private:
-        virtual bool        _getFD()                         = 0        ;
-        virtual bool        _mapBAR (uint8_t bar_index)      = 0        ;
-        virtual bool        _enableDMA()                     = 0        ;                                            
+        virtual bool        _getFD()                                    = 0 ;
+        virtual bool        _mapBAR (uint8_t bar_index)                 = 0 ;
+        virtual bool        _enableDMA()                                = 0 ;
     protected:
-        basic_para_type     m_basic_para                               ;
-        dev_stats_type      m_dev_stats{0,0,0,0}                       ;
-        VfioFd              m_fds{-1,-1,-1,-1}                         ;                                    
-        interruptPara       m_interrupt_para                            ;
+        uint64_t            _monotonic_time()                               ;
+        virtual struct DevStatus   _readStatus()                   = 0 ;
+        virtual void        _initStatus(DevStatus* stats)          = 0 ;
+        void                _print_stats_diff(DevStatus* stats_new, DevStatus* stats_old, uint64_t nanos);          
+    protected:
+        basic_para_type     m_basic_para                                    ;
+        DevStatus           m_dev_stats{0,0,0,0}                            ;
+        VfioFd              m_fds{-1,-1,-1,-1}                              ;  
+        interruptPara       m_interrupt_para                                ;
 };
 #endif // BASIC_DEV_H
 

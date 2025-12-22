@@ -14,9 +14,13 @@
 #include "dma_memory_allocator.h"
 #include "ixgbe_ring_buffer.h"
 #define PKT_SIZE 60
+#define BATCH_SIZE 32 // the number of pkt to be sent per time
+#define TX_CLEAN_BATCH 32 // the number of tx descriptors to clean in one batch
+#define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
+#include <string>
 
 
-static const uint8_t pkt_data[] = {
+static const char pkt_data[] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // dst MAC
 	0x10, 0x10, 0x10, 0x10, 0x10, 0x10, // src MAC
 	0x08, 0x00,                         // ether type: IPv4
@@ -32,7 +36,7 @@ static const uint8_t pkt_data[] = {
 	(PKT_SIZE - 20 - 14) & 0xFF,        // udp len exlucding ip & ethernet, low byte
 	0x00, 0x00,                         // udp checksum, optional
 	'i', 'x', 'y'                       // payload
-	// rest of the payload is zero-filled because mempools guarantee empty bufs
+	// rest of the payload is zero-filled because mempools guarantee empty bufs_with_data
 };
 
 VFIODev::VFIODev(std::string pci_addr, uint8_t max_bar_index) :
@@ -239,7 +243,7 @@ bool VFIODev::initHardware(const int interrupt_interval) {
 	this->_init_link_nego();
 	// section 4.6.5 - statistical counters
 	// reset-on-read registers, just read them once
-	this->_read_stats();
+	(void)this->_readStatus();
     this->_initialize_interrupt(interrupt_interval);
 	success("Hardware initialized");
     return true;
@@ -273,9 +277,9 @@ bool VFIODev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, uint32_t
     m_num_rx_bufs = num_buf;
     m_buf_rx_size = buf_size;
     for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
-		p_mempool.push_back(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
+		// p_mempool.push_back(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
-        p_rx_ring_buffers[i]->linkMemoryPool(p_mempool[i]);
+        p_rx_ring_buffers[i]->linkMemoryPool(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
 		success("Linked memory pool to RX ring buffer %d", i);
     }
     return true;
@@ -287,12 +291,12 @@ bool VFIODev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t
     m_buf_tx_size = buf_size;
     for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
         p_tx_ring_buffers.push_back(new IXGBE_TxRingBuffer);
+		p_tx_ring_buffers[i]->linkMemoryPool(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
     }
     return true;
 }
 
-bool VFIODev::_read_stats(){
-    info("entered VFIODev::_read_stats");
+DevStatus VFIODev::_readStatus(){
 	uint32_t rx_pkts = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPRC);
 	uint32_t tx_pkts = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPTC);
 	uint64_t rx_bytes = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GORCL) + (((uint64_t) get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GORCH)) << 32);
@@ -302,7 +306,7 @@ bool VFIODev::_read_stats(){
 	m_dev_stats.tx_pkts  += tx_pkts;
 	m_dev_stats.rx_bytes += rx_bytes;
 	m_dev_stats.tx_bytes += tx_bytes;
-	return true;
+	return m_dev_stats;
 }
 
 
@@ -359,27 +363,180 @@ bool VFIODev::_init_link_nego(){
 }
 
 
-bool VFIODev::initTxDataMemPool() {
-    debug("entered VFIODev::initTxDataMemPool");
-	const int NUM_BUFS = 2048;
-	p_tx_mempool = new MemoryPool(NUM_BUFS, 2048, m_fds.container_fd);
+bool VFIODev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id){ 
+	(void)p_data;
+	(void)size;
+	(void)queue_id;
+	return true; }
+// 	if (queue_id >= m_basic_para.num_tx_queues) {
+// 		warn("Invalid TX queue id %d", queue_id);
+// 		return false;
+// 	}
+// 	struct pkt_buf* buf = p_tx_ring_buffers[queue_id]->getMemPool()->takeOutPktBuf();
+// 	if (!buf) return false;
+// 	buf->size = size;
+// 	memcpy(buf->data, p_data, size);
+// 	p_tx_ring_buffers[queue_id]->getMemPool()->pushBackPktBuf(buf);
+
+// 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
+// 		struct pkt_buf* buf = p_tx_mempool->takeOutPktBuf();
+// 		buf->size = PKT_SIZE;
+// 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
+// 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
+// 		bufs_with_data[buf_id] = buf;
+// 	}
+// 	// return them all to the mempool, all future allocations will return bufs_with_data with the data set above
+// 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
+// 		p_tx_mempool->pushBackPktBuf(bufs_with_data[buf_id]);
+// 	}
+// 	return true;
+// }
+
+bool VFIODev::fillTxMemPool(uint32_t num_buf){
+	m_used_tx_buf_num = num_buf;
+	struct MemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
-	struct pkt_buf* bufs[NUM_BUFS];
-	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-		struct pkt_buf* buf = p_tx_mempool->takeOutPktBuf();
+	
+	struct pkt_buf** bufs_with_data = new struct pkt_buf*[num_buf];
+	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
+		struct pkt_buf* buf = mempool->takeOutPktBuf();
 		buf->size = PKT_SIZE;
 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
-		bufs[buf_id] = buf;
+		bufs_with_data[buf_id] = buf;
 	}
-	// return them all to the mempool, all future allocations will return bufs with the data set above
-	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-		p_tx_mempool->pushBackPktBuf(bufs[buf_id]);
+	// return them all to the mempool, all future allocations will return bufs_with_data with the data set above
+	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
+		mempool->pushBackPktBuf(bufs_with_data[buf_id]);
 	}
+	delete [] bufs_with_data;
 	return true;
 }
 
+void VFIODev::send(){
+    IXGBE_TxRingBuffer *tx_ring = p_tx_ring_buffers[0];
+	
+	uint64_t last_stats_printed = BasicDev::_monotonic_time();
+	uint64_t counter = 0;
+	struct DevStatus stats_old, stats;
+	_initStatus(&stats);
+	_initStatus(&stats_old);
+
+	// array of bufs_with_data sent out in a batch
+	struct pkt_buf* bufs_with_data[BATCH_SIZE];
+	// tx loop
+	for (;;) {
+		// we cannot immediately recycle packets, we need to allocate new packets every time
+		// the old packets might still be used by the NIC: tx is async
+		(void)tx_ring->getMemPool()->takePktBuf(bufs_with_data, BATCH_SIZE);
+		// track stats
+		
+
+	// the descriptor is explained in section 7.2.3.2.4
+	// we just use a struct copy & pasted from intel, but it basically has two formats (hence a union):
+	// 1. the write-back format which is written by the NIC once sending it is finished this is used in step 1
+	// 2. the read format which is read by the NIC and written by us, this is used in step 2
+
+	uint16_t clean_index = tx_ring->getCleanIndex(); // next descriptor to clean up
+
+	// step 1: clean up descriptors that were sent out by the hardware and return them to the mempool
+	// start by reading step 2 which is done first for each packet
+	// cleaning up must be done in batches for performance reasons, so this is unfortunately somewhat complicated
+	while (true) {
+		// figure out how many descriptors can be cleaned up
+		int32_t cleanable = tx_ring->getTxIndex() - clean_index; // tx_index is always ahead of clean (invariant of our queue)
+		if (cleanable < 0) { // handle wrap-around
+			cleanable = m_used_tx_buf_num + cleanable;
+		}
+		if (cleanable < TX_CLEAN_BATCH) {
+			break;
+		}
+		// calculcate the index of the last transcriptor in the clean batch
+		// Only clean when the cleanable number is more than TX_CLEAN_BATCH.
+		int32_t cleanup_to = clean_index + TX_CLEAN_BATCH - 1;
+		if ((uint32_t)cleanup_to >= m_used_tx_buf_num) {
+			cleanup_to -= m_used_tx_buf_num;
+		}
+		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptors() + cleanup_to;
+		uint32_t status = txd->wb.status;
+		// hardware sets this flag as soon as it's sent out, we can give back all bufs_with_data in the batch back to the mempool
+		if (status & IXGBE_ADVTXD_STAT_DD) {
+			int32_t i = clean_index;
+			while (true) {
+				struct pkt_buf* buf = (struct pkt_buf*) tx_ring->getMemPool()->getUsedBufAddr(i);
+				tx_ring->getMemPool()->pushBackPktBuf(buf);
+				if (i == cleanup_to) {
+					break;
+				}
+				i = wrap_ring(i, m_used_tx_buf_num);
+			}
+			// next descriptor to be cleaned up is one after the one we just cleaned
+			clean_index = wrap_ring(cleanup_to, m_used_tx_buf_num);
+		} else {
+			// clean the whole batch or nothing; yes, this leaves some packets in
+			// the queue forever if you stop transmitting, but that's not a real concern
+			break;
+		}
+	}
+	tx_ring->setCleanIndex(clean_index);
+	// step 2: send out as many of our packets as possible
+	uint32_t sent;
+	for (sent = 0; sent < BATCH_SIZE; sent++) {
+		uint32_t next_index = wrap_ring(tx_ring->getTxIndex(), tx_ring->getMemPool()->getNumOfBufs());
+		// we are full if the next index is the one we are trying to reclaim
+		if (clean_index == next_index) {
+			break;
+		}
+		struct pkt_buf* buf = bufs_with_data[sent];
+		// remember virtual address to clean it up later
+		tx_ring->getMemPool()->setUsedBufAddr(tx_ring->getTxIndex(), (void*) buf);
+		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptors() + tx_ring->getTxIndex();
+		tx_ring->setTxIndex(next_index);
+		// NIC reads from here
+		uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
+		txd->read.buffer_addr = buf->iova + data_offset;
+		// always the same flags: one buffer (EOP), advanced data descriptor, CRC offload, data length
+		txd->read.cmd_type_len =
+			IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS | IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DTYP_DATA | buf->size;
+		// no fancy offloading stuff - only the total payload length
+		// implement offloading flags here:
+		// 	* ip checksum offloading is trivial: just set the offset
+		// 	* tcp/udp checksum offloading is more annoying, you have to precalculate the pseudo-header checksum
+		txd->read.olinfo_status = buf->size << IXGBE_ADVTXD_PAYLEN_SHIFT;
+	}
+	// send out by advancing tail, i.e., pass control of the bufs_with_data to the nic
+	// this seems like a textbook case for a release memory order, but Intel's driver doesn't even use a compiler barrier here
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tx_ring->getTxIndex());
+
+	if ((counter++ & 0xFFF) == 0) {
+		uint64_t time = BasicDev::_monotonic_time();
+		if (time - last_stats_printed > 1000 * 1000 * 1000) {
+			// every second
+			if (bufs_with_data[0]) {
+				printf("bufs_with_data[0] (%u bytes): ", bufs_with_data[0]->size);
+				for (uint32_t i = 0; i < bufs_with_data[0]->size; i++) {
+					printf("%02x ", bufs_with_data[0]->data[i]);
+				}
+				printf("\n");
+			}
+			stats = this->_readStatus();
+			_print_stats_diff(&stats, &stats_old, time - last_stats_printed);
+			stats_old = stats;
+			last_stats_printed = time;
+		}
+	}
+}
+
+
+}
+
+void VFIODev::_initStatus(DevStatus* stats){
+	stats->rx_bytes = 0;
+	stats->rx_pkts = 0;
+	stats->tx_bytes = 0;
+	stats->tx_pkts = 0;
+}
 
 
 uint16_t VFIODev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
@@ -431,8 +588,8 @@ bool VFIODev::_setRxDescriptorRing(){
 		// neat trick from Snabb: initialize to 0xFF to prevent rogue memory accesses on premature DMA activation
 		memset(DMA_mem_pair.virt, -1, ring_size_bytes);
 		// tell the device where it can write to (its iova, so its view)
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDBAL(i), (uint32_t) (DMA_mem_pair.phy & 0xFFFFFFFFull));
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDBAH(i), (uint32_t) (DMA_mem_pair.phy >> 32));
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDBAL(i), (uint32_t) (DMA_mem_pair.iova & 0xFFFFFFFFull));
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDBAH(i), (uint32_t) (DMA_mem_pair.iova >> 32));
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDLEN(i), ring_size_bytes);
 		// set ring to empty at start
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDH(i), 0);
@@ -443,6 +600,7 @@ bool VFIODev::_setRxDescriptorRing(){
             error("RX ring buffer %d is nullptr", i);
         }
         p_rx_ring_buffers[i]->allocDMAMem2DescRing(DMA_mem_pair);
+		p_rx_ring_buffers[i]->linkDescWithPKTBuf();
 
 	}
 
@@ -486,10 +644,10 @@ bool VFIODev::_setTxDescriptorRing(){
 		DMAMemoryPair DMA_mem_pair = DMAMemoryAllocator::getInstance().allocDMAMemory(ring_size_bytes, this->m_fds.container_fd);
 		memset(DMA_mem_pair.virt, -1, ring_size_bytes);
 		// tell the device where it can write to (its iova, so its view)
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAL(i), (uint32_t) (DMA_mem_pair.phy & 0xFFFFFFFFull));
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAH(i), (uint32_t) (DMA_mem_pair.phy >> 32));
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAL(i), (uint32_t) (DMA_mem_pair.iova & 0xFFFFFFFFull));
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAH(i), (uint32_t) (DMA_mem_pair.iova >> 32));
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDLEN(i), ring_size_bytes);
-		debug("tx ring %d phy addr:  0x%012lX", i, DMA_mem_pair.phy);
+		debug("tx ring %d phy addr:  0x%012lX", i, DMA_mem_pair.iova);
 		debug("tx ring %d virt addr: 0x%012lX", i, (uintptr_t) DMA_mem_pair.virt);
 
 		// descriptor writeback magic values, important to get good performance and low PCIe overhead
