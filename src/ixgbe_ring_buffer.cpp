@@ -5,7 +5,7 @@ using namespace std;
 
 
 
-bool IXGBE_RxRingBuffer::linkMemoryPool(MemoryPool* const mem_pool){
+bool IXGBE_RxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	if (!mem_pool) {
 		error("null memory pool provided to RX ring buffer");
 		return false;
@@ -50,7 +50,7 @@ bool IXGBE_RxRingBuffer::linkDescWithPKTBuf(){
 	}
 	return true;
 };
-bool IXGBE_TxRingBuffer::linkMemoryPool(MemoryPool* const mem_pool){
+bool IXGBE_TxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	if (!mem_pool) {
 		error("null memory pool provided to RX ring buffer");
 		return false;

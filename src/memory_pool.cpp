@@ -11,7 +11,7 @@
 
 
 
-MemoryPool::MemoryPool(uint32_t num_bufs, uint32_t buf_size, int container_fd):
+DMAMemoryPool::DMAMemoryPool(uint32_t num_bufs, uint32_t buf_size, int container_fd):
     m_num_bufs(num_bufs),
     m_buf_size(buf_size),
     m_total_size(static_cast<uint64_t>(num_bufs) * static_cast<uint64_t>(buf_size)),
@@ -23,7 +23,7 @@ MemoryPool::MemoryPool(uint32_t num_bufs, uint32_t buf_size, int container_fd):
     _initEachPktBuf();
 }
 
-bool MemoryPool::_allocateMemory(){
+bool DMAMemoryPool::_allocateMemory(){
     if (m_container_fd<=0) {
         error("No valid container fd provided, DMA memory may not be IOMMU mapped");
         return false;
@@ -33,7 +33,7 @@ bool MemoryPool::_allocateMemory(){
     return true;
 }
 
-bool MemoryPool::_initEachPktBuf(){
+bool DMAMemoryPool::_initEachPktBuf(){
     if (m_DMA_mem_pair.virt == nullptr) {
         error("memory not allocated yet");
         return false;
@@ -53,7 +53,7 @@ bool MemoryPool::_initEachPktBuf(){
     return true;
 }
 
-uint32_t MemoryPool::takePktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs){
+uint32_t DMAMemoryPool::takePktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs){
     uint32_t actual_num = 0;
     if (num_bufs > m_free_stack_top) {
         num_bufs = m_free_stack_top;
@@ -70,7 +70,7 @@ uint32_t MemoryPool::takePktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs){
     return actual_num;
 }
 
-struct pkt_buf* MemoryPool::takeOutPktBuf(){
+struct pkt_buf* DMAMemoryPool::takeOutPktBuf(){
     if (m_free_stack_top == 0) {
         warn("no free pkt_buf available");
         return nullptr;
@@ -80,7 +80,7 @@ struct pkt_buf* MemoryPool::takeOutPktBuf(){
     return buf;
 }
 
-void MemoryPool::pushBackPktBuf(struct pkt_buf* buf){
+void DMAMemoryPool::pushBackPktBuf(struct pkt_buf* buf){
     m_free_stack[m_free_stack_top++] = buf->idx;
 }
 

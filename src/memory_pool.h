@@ -17,11 +17,11 @@ struct pkt_buf {
 };
 
 
-class MemoryPool{
+class DMAMemoryPool{
 
     public:
-        MemoryPool(uint32_t num_buf, uint32_t buf_size, int container_fd = -1);
-        ~MemoryPool();
+        DMAMemoryPool(uint32_t num_buf, uint32_t buf_size, int container_fd = -1);
+        ~DMAMemoryPool();
         struct pkt_buf*             takeOutPktBuf();
         uint32_t                    takePktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs);
         void                        pushBackPktBuf(struct pkt_buf* buf);

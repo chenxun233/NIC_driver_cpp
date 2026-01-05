@@ -11,11 +11,11 @@ const uint64_t INTERRUPT_INITIAL_INTERVAL = 1000 * 1000 * 1000;
 #define NUM_OF_BUF_TX_QUEUE 512
 
 int main() {
-    std::unique_ptr<BasicDev> device = std::make_unique<VFIODev>("0000:04:00.0",0);
+    std::unique_ptr<BasicDev> device = std::make_unique<Intel82599Dev>("0000:04:00.0",0);
            
     device->setRxRingBuffers(1,NUM_OF_BUF_RX_QUEUE, PKT_BUF_SIZE);
     device->setTxRingBuffers(1,NUM_OF_BUF_TX_QUEUE, PKT_BUF_SIZE);
-    device->initHardware(INTERRUPT_INITIAL_INTERVAL)                ;
+    device->initHardware(INTERRUPT_INITIAL_INTERVAL)             ;
     device->setDescriptorRings()    ;
     device->enableDevQueues()       ;
     device->enableDevInterrupt()    ;
@@ -23,6 +23,5 @@ int main() {
     device->wait4Link()             ;            
     device->fillTxMemPool(NUM_OF_BUF_TX_QUEUE);
     device->send();
-    debug("__");
     return 0;
 }

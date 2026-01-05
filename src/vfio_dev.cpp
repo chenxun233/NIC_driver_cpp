@@ -39,28 +39,31 @@ static const char pkt_data[] = {
 	// rest of the payload is zero-filled because mempools guarantee empty bufs_with_data
 };
 
-VFIODev::VFIODev(std::string pci_addr, uint8_t max_bar_index) :
+Intel82599Dev::Intel82599Dev(std::string pci_addr, uint8_t max_bar_index) :
+// get file descriptors of the 1. container, 2. group, 3. device
+// get the BAR address
+// enable DMA in terms of the NIC hardware register.
 BasicDev(pci_addr,max_bar_index)
 {
 	 		_getFD()     				&&
-			_mapBAR (max_bar_index)     &&
+			_getBARAddr (max_bar_index) &&
 			_enableDMA()                ;
 }
 
-VFIODev::~VFIODev(){
+Intel82599Dev::~Intel82599Dev(){
 };
 
-bool VFIODev::_getFD() {
+bool Intel82599Dev::_getFD() {
     return
-    this->_get_group_id()               &&
-    this->_get_container_fd()           &&
-    this->_get_group_fd()               &&
-    this->_add_group_to_container()     &&
-    this->_get_device_fd();              
+    this->_getGroupID()               &&
+    this->_getContainerFD()           &&
+    this->_getGroupFD()               &&
+    this->_addGroup2Container()     &&
+    this->_getDeviceFD();              
 };
 
 
-bool VFIODev::_get_group_id(){
+bool Intel82599Dev::_getGroupID(){
     std::filesystem::path device_dir = std::filesystem::path("/sys/bus/pci/devices") / this->m_basic_para.pci_addr.c_str();
     struct stat st;
     int ret = stat(device_dir.c_str(), &st);
@@ -83,7 +86,7 @@ bool VFIODev::_get_group_id(){
 }
 
 
-bool VFIODev::_get_container_fd(){
+bool Intel82599Dev::_getContainerFD(){
     int cfd = m_fds.container_fd;
     if (cfd == -1) {
         cfd = ::open("/dev/vfio/vfio", O_RDWR);
@@ -97,7 +100,7 @@ bool VFIODev::_get_container_fd(){
     return true;
 }
 
-bool VFIODev::_get_group_fd(){
+bool Intel82599Dev::_getGroupFD(){
     if (this->m_fds.group_id == -1) {
         warn("Group ID is invalid");
         return false;
@@ -113,7 +116,7 @@ bool VFIODev::_get_group_fd(){
     return true;
 }
 
-bool VFIODev::_add_group_to_container(){
+bool Intel82599Dev::_addGroup2Container(){
     if (this->m_fds.container_fd == -1 || this->m_fds.group_fd == -1) {
         warn("Container fd or group fd is invalid");
         return false;
@@ -160,7 +163,7 @@ bool VFIODev::_add_group_to_container(){
 
 }
 
-bool VFIODev::_get_device_fd(){
+bool Intel82599Dev::_getDeviceFD(){
     if (this->m_fds.group_fd == -1) {
         warn("Group fd is invalid"); 
         return false;
@@ -175,7 +178,7 @@ bool VFIODev::_get_device_fd(){
     return true;
 }
 
-bool VFIODev::_mapBAR (uint8_t bar_index) {
+bool Intel82599Dev::_getBARAddr (uint8_t bar_index) {
     m_basic_para.max_bar_index = bar_index;
     if (m_basic_para.max_bar_index > VFIO_PCI_BAR5_REGION_INDEX){
         warn("BAR index %d is out of range", m_basic_para.max_bar_index);
@@ -194,7 +197,7 @@ bool VFIODev::_mapBAR (uint8_t bar_index) {
             warn("Failed to get region info for BAR %d: %s", i, strerror(errno));
             return false; // MAP_FAILED == ((void *) -1)
         }
-        uint8_t* temp_addr = static_cast<uint8_t*> (::mmap(NULL, region_info.size, PROT_READ | PROT_WRITE, MAP_SHARED, this->m_fds.device_fd, region_info.offset));
+        uint8_t* temp_addr = static_cast<uint8_t*> (mmap(NULL, region_info.size, PROT_READ | PROT_WRITE, MAP_SHARED, this->m_fds.device_fd, region_info.offset));
         if (temp_addr == MAP_FAILED) {
             error("Failed to mmap BAR %d: %s", i, strerror(errno));
             return false;
@@ -207,7 +210,7 @@ bool VFIODev::_mapBAR (uint8_t bar_index) {
 };
 
 
-bool VFIODev::_enableDMA() {
+bool Intel82599Dev::_enableDMA() {
 	int command_register_offset = 4;
 	// bit 2 is "bus master enable", see PCIe 3.0 specification section 7.5.1.1
 	int bus_master_enable_bit = 2;
@@ -228,7 +231,7 @@ bool VFIODev::_enableDMA() {
 
 
 
-bool VFIODev::initHardware(const int interrupt_interval) {
+bool Intel82599Dev::initHardware(const int interrupt_interval) {
 	info("Resetting device...");
 	// section 4.6.3.1 - disable all interrupts
 	this->_dev_disable_IRQ();
@@ -249,7 +252,7 @@ bool VFIODev::initHardware(const int interrupt_interval) {
     return true;
 };
 
-bool VFIODev::setDescriptorRings() {
+bool Intel82599Dev::setDescriptorRings() {
 	if (m_num_rx_bufs == 0 || m_buf_rx_size == 0 ||
 		m_num_tx_bufs == 0 || m_buf_tx_size == 0) {
 		warn("RX or TX buffer parameters not set");
@@ -263,40 +266,40 @@ bool VFIODev::setDescriptorRings() {
     return true;
 }
 
-bool VFIODev::enableDevQueues() {
-    debug("entered VFIODev::enableDevQueues");
+bool Intel82599Dev::enableDevQueues() {
+    debug("entered Intel82599Dev::enableDevQueues");
 	this->_enableDevRxQueue();
 	this->_enableDevTxQueue();
     return true;
 }
 
 
-bool VFIODev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, uint32_t buf_size){
+bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, uint32_t buf_size){
 	info("settingRxRingBuffers");
     m_basic_para.num_rx_queues = num_rx_queues;
     m_num_rx_bufs = num_buf;
     m_buf_rx_size = buf_size;
     for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
-		// p_mempool.push_back(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
+		// p_mempool.push_back(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
-        p_rx_ring_buffers[i]->linkMemoryPool(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
+        p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
 		success("Linked memory pool to RX ring buffer %d", i);
     }
     return true;
 }
 
-bool VFIODev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size){
+bool Intel82599Dev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size){
     m_basic_para.num_tx_queues = num_tx_queues;
     m_num_tx_bufs = num_buf;
     m_buf_tx_size = buf_size;
     for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
         p_tx_ring_buffers.push_back(new IXGBE_TxRingBuffer);
-		p_tx_ring_buffers[i]->linkMemoryPool(new MemoryPool(num_buf, buf_size, m_fds.container_fd));
+		p_tx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
     }
     return true;
 }
 
-DevStatus VFIODev::_readStatus(){
+DevStatus Intel82599Dev::_readStatus(){
 	uint32_t rx_pkts = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPRC);
 	uint32_t tx_pkts = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPTC);
 	uint64_t rx_bytes = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GORCL) + (((uint64_t) get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GORCH)) << 32);
@@ -310,13 +313,13 @@ DevStatus VFIODev::_readStatus(){
 }
 
 
-bool VFIODev::_dev_disable_IRQ(){
+bool Intel82599Dev::_dev_disable_IRQ(){
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_EIMS, 0x00000000);
 	_dev_clear_interrupts();
 	return true;
 }
 
-bool VFIODev::_dev_clear_interrupts(){
+bool Intel82599Dev::_dev_clear_interrupts(){
 	// Clear interrupt mask
 	// Clear interrupt mask to stop from interrupts being generated
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_EIMC, IXGBE_IRQ_CLEAR_MASK);
@@ -324,13 +327,13 @@ bool VFIODev::_dev_clear_interrupts(){
 	return true;
 }
 
-bool VFIODev::_dev_rst_hardware(){
+bool Intel82599Dev::_dev_rst_hardware(){
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
 	wait_clear_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
 	return true;
 }
 
-bool VFIODev::_get_mac_address(){
+bool Intel82599Dev::_get_mac_address(){
 	mac_address_type mac;
 	uint32_t rar_low = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RAL(0));
 	uint32_t rar_high = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RAH(0));
@@ -345,14 +348,14 @@ bool VFIODev::_get_mac_address(){
     return true;
 }
 
-bool VFIODev::_init_eeprom_n_dma(){
+bool Intel82599Dev::_init_eeprom_n_dma(){
 	// section 4.6.3 - Wait for EEPROM auto read completion
 	wait_set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_EEC, IXGBE_EEC_ARD);
 	// section 4.6.3 - Wait for DMA initialization done (RDRXCTL.DMAIDONE)
 	wait_set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDRXCTL, IXGBE_RDRXCTL_DMAIDONE);
     return true;
 }
-bool VFIODev::_init_link_nego(){
+bool Intel82599Dev::_init_link_nego(){
 	// should already be set by the eeprom config, maybe we shouldn't override it here to support weirdo nics?
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC, (get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC) & ~IXGBE_AUTOC_LMS_MASK) | IXGBE_AUTOC_LMS_10G_SERIAL);
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC, (get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_AUTOC) & ~IXGBE_AUTOC_10G_PMA_PMD_MASK) | IXGBE_AUTOC_10G_XAUI);
@@ -363,7 +366,7 @@ bool VFIODev::_init_link_nego(){
 }
 
 
-bool VFIODev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id){ 
+bool Intel82599Dev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id){ 
 	(void)p_data;
 	(void)size;
 	(void)queue_id;
@@ -392,9 +395,9 @@ bool VFIODev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id){
 // 	return true;
 // }
 
-bool VFIODev::fillTxMemPool(uint32_t num_buf){
+bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
 	m_used_tx_buf_num = num_buf;
-	struct MemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
+	struct DMAMemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
 	
@@ -414,7 +417,7 @@ bool VFIODev::fillTxMemPool(uint32_t num_buf){
 	return true;
 }
 
-void VFIODev::send(){
+void Intel82599Dev::send(){
     IXGBE_TxRingBuffer *tx_ring = p_tx_ring_buffers[0];
 	
 	uint64_t last_stats_printed = BasicDev::_monotonic_time();
@@ -531,7 +534,7 @@ void VFIODev::send(){
 
 }
 
-void VFIODev::_initStatus(DevStatus* stats){
+void Intel82599Dev::_initStatus(DevStatus* stats){
 	stats->rx_bytes = 0;
 	stats->rx_pkts = 0;
 	stats->tx_bytes = 0;
@@ -539,7 +542,7 @@ void VFIODev::_initStatus(DevStatus* stats){
 }
 
 
-uint16_t VFIODev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
+uint16_t Intel82599Dev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
 	if (len % 1) error("odd-sized checksums NYI"); // we don't need that
 	uint32_t cs = 0;
 	for (uint32_t i = 0; i < len / 2; i++) {
@@ -552,7 +555,7 @@ uint16_t VFIODev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
 }
 
 
-bool VFIODev::_setRxDescriptorRing(){
+bool Intel82599Dev::_setRxDescriptorRing(){
 	info("initializing RX descriptor rings");
 	if (m_num_rx_bufs == 0 || m_buf_rx_size == 0) {
 		warn("RX buffer parameters not set");
@@ -617,7 +620,7 @@ bool VFIODev::_setRxDescriptorRing(){
 	return true;
 }
 
-bool VFIODev::_setTxDescriptorRing(){
+bool Intel82599Dev::_setTxDescriptorRing(){
 	if (m_num_tx_bufs == 0 || m_buf_tx_size == 0) {
 		warn("TX buffer parameters not set");
 		return false;
@@ -666,7 +669,7 @@ bool VFIODev::_setTxDescriptorRing(){
 	return true;
 
 }
-bool VFIODev::_enableDevRxQueue(){
+bool Intel82599Dev::_enableDevRxQueue(){
 	for (uint16_t queue_id = 0; queue_id < m_basic_para.num_rx_queues; queue_id++){
 		// enable queue and wait if necessary
 		set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXDCTL(queue_id), IXGBE_RXDCTL_ENABLE);
@@ -681,7 +684,7 @@ bool VFIODev::_enableDevRxQueue(){
 	return true;
 }
 
-bool VFIODev::_enableDevTxQueue(){
+bool Intel82599Dev::_enableDevTxQueue(){
 	for (uint16_t queue_id = 0; queue_id < m_basic_para.num_tx_queues; queue_id++){
 		debug("starting tx queue %d", queue_id);
 		// tx queue starts out empty
@@ -695,7 +698,7 @@ bool VFIODev::_enableDevTxQueue(){
 	}
 		return true;
 }
-void VFIODev::_enableDevMSIInterrupt(uint16_t queue_id){
+void Intel82599Dev::_enableDevMSIInterrupt(uint16_t queue_id){
 	// Step 1: The software driver associates between Tx and Rx interrupt causes and the EICR
 	// register by setting the IVAR[n] registers.
 	set_ivar(m_basic_para.p_bar_addr[0], 0, queue_id, 0);
@@ -724,7 +727,7 @@ void VFIODev::_enableDevMSIInterrupt(uint16_t queue_id){
 	debug("Using MSI interrupts");
 }
 
-void VFIODev::_enableDevMSIxInterrupt(uint16_t queue_id){
+void Intel82599Dev::_enableDevMSIxInterrupt(uint16_t queue_id){
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
 	// throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
 	uint32_t gpie = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_GPIE);
@@ -770,8 +773,8 @@ void VFIODev::_enableDevMSIxInterrupt(uint16_t queue_id){
 	debug("Using MSIX interrupts");
 }
 
-bool VFIODev::enableDevInterrupt(){
-    debug("entered VFIODev::enableDevInterrupt");
+bool Intel82599Dev::enableDevInterrupt(){
+    debug("entered Intel82599Dev::enableDevInterrupt");
     if (m_interrupt_para.interrupt_queues.size() != m_basic_para.num_rx_queues) {
         error("Interrupt queues size %d does not match number of rx queues %d", 
             (int)m_interrupt_para.interrupt_queues.size(), 
@@ -800,7 +803,7 @@ bool VFIODev::enableDevInterrupt(){
 	return true;
 }
 
-bool VFIODev::setPromisc(bool enable){
+bool Intel82599Dev::setPromisc(bool enable){
 	if (enable) {
 		info("enabling promisc mode");
 		set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_FCTRL, IXGBE_FCTRL_MPE | IXGBE_FCTRL_UPE);
@@ -812,16 +815,16 @@ bool VFIODev::setPromisc(bool enable){
 }
 
 
-bool VFIODev::_initialize_interrupt(const int &interrupt_interval){
-    debug("entered VFIODev::_initialize_interrupt");
+bool Intel82599Dev::_initialize_interrupt(const int &interrupt_interval){
+    debug("entered Intel82599Dev::_initialize_interrupt");
 	return
 	this->_getDevIRQType()				&&
 	this->_allocIRQQueues()				&&
 	this->_setupIRQQueues(interrupt_interval);
 }
 
-bool VFIODev::_getDevIRQType(){
-    debug("entered VFIODev::_getDevIRQType");
+bool Intel82599Dev::_getDevIRQType(){
+    debug("entered Intel82599Dev::_getDevIRQType");
 	if (m_fds.device_fd<=0) {
 		error("Device fd is invalid");
 		return false;
@@ -843,12 +846,12 @@ bool VFIODev::_getDevIRQType(){
 	}
     return false;
 }
-bool VFIODev::_allocIRQQueues(){
-    debug("entered VFIODev::_allocIRQQueues");
+bool Intel82599Dev::_allocIRQQueues(){
+    debug("entered Intel82599Dev::_allocIRQQueues");
 	this->m_interrupt_para.interrupt_queues.resize(m_basic_para.num_rx_queues);
 	return true;
 }
-int VFIODev::_injectEventFdToVFIODev_msi(){
+int Intel82599Dev::_injectEventFdToVFIODev_msi(){
 	debug("Enable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
 	struct vfio_irq_set* irq_set;
@@ -877,7 +880,7 @@ int VFIODev::_injectEventFdToVFIODev_msi(){
 	return event_fd;
 }
 
-int VFIODev::_injectEventFdToVFIODev_msix(int index){
+int Intel82599Dev::_injectEventFdToVFIODev_msix(int index){
 	info("Enable MSIX Interrupts");
 	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
 	struct vfio_irq_set* irq_set;
@@ -909,7 +912,7 @@ int VFIODev::_injectEventFdToVFIODev_msix(int index){
 	return event_fd;
 }
 
-int VFIODev::_vfio_epoll_ctl(int event_fd){
+int Intel82599Dev::_vfio_epoll_ctl(int event_fd){
 	struct epoll_event event;
 	event.events = EPOLLIN;
 	event.data.fd = event_fd;
@@ -924,7 +927,7 @@ int VFIODev::_vfio_epoll_ctl(int event_fd){
 	return epoll_fd;
 }
 
-bool VFIODev::_setupIRQQueues(const int &interrupt_interval){
+bool Intel82599Dev::_setupIRQQueues(const int &interrupt_interval){
 	switch (m_interrupt_para.interrupt_type) {	
 		case VFIO_PCI_MSIX_IRQ_INDEX: {
 			for (uint32_t rx_queue = 0; rx_queue < m_basic_para.num_rx_queues; rx_queue++) {
@@ -958,7 +961,7 @@ bool VFIODev::_setupIRQQueues(const int &interrupt_interval){
 }
 
 
-uint32_t VFIODev::_get_link_speed(){
+uint32_t Intel82599Dev::_get_link_speed(){
 	uint32_t links = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_LINKS);
 	if (!(links & IXGBE_LINKS_UP)) {
 		return 0;
@@ -975,7 +978,7 @@ uint32_t VFIODev::_get_link_speed(){
 	}
 }
 
-bool VFIODev::wait4Link(){
+bool Intel82599Dev::wait4Link(){
 	info("Waiting for link...");
 	int32_t max_wait = 10000000; // 10 seconds in us
 	uint32_t poll_interval = 100000; // 10 ms in us

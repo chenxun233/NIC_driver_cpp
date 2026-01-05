@@ -87,7 +87,7 @@ class BasicDev{
         basic_para_type     get_basic_para()                                ; 
     private:
         virtual bool        _getFD()                                    = 0 ;
-        virtual bool        _mapBAR (uint8_t bar_index)                 = 0 ;
+        virtual bool        _getBARAddr (uint8_t bar_index)            = 0 ;
         virtual bool        _enableDMA()                                = 0 ;
     protected:
         uint64_t            _monotonic_time()                               ;

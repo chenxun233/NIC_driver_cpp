@@ -11,10 +11,10 @@ struct QueuesPtr {
     
 
 
-class VFIODev : public BasicDev{
+class Intel82599Dev : public BasicDev{
     public:
-        VFIODev(std::string pci_addr, uint8_t max_bar_index)                                                     ;
-        ~VFIODev()                                                                                               ;
+        Intel82599Dev(std::string pci_addr, uint8_t max_bar_index)                                                     ;
+        ~Intel82599Dev()                                                                                               ;
         bool        initHardware(const int interrupt_interval)                override                           ;
         bool        setDescriptorRings()                                      override                           ;
         bool        enableDevQueues()                                         override                           ;
@@ -29,13 +29,13 @@ class VFIODev : public BasicDev{
         bool        wait4Link()                                         override                                 ;
     private:
         bool        _getFD()                                                 override                                 ;
-        bool        _mapBAR (uint8_t bar_index)                              override                                 ;
+        bool        _getBARAddr (uint8_t bar_index)                              override                                 ;
         bool        _enableDMA()                                             override                                 ;                                  
-        bool        _get_group_id()                                                        ;
-        bool        _get_group_fd()                                                        ;
-        bool        _get_container_fd()                                                    ;
-        bool        _get_device_fd()                                                       ;
-        bool        _add_group_to_container()                                              ;
+        bool        _getGroupID()                                                        ;
+        bool        _getGroupFD()                                                        ;
+        bool        _getContainerFD()                                                    ;
+        bool        _getDeviceFD()                                                       ;
+        bool        _addGroup2Container()                                              ;
     private:
         bool        _dev_disable_IRQ()                                                     ;
         bool        _dev_clear_interrupts()                                                ;
@@ -66,8 +66,8 @@ class VFIODev : public BasicDev{
         uint32_t                        m_buf_rx_size{0}                                   ;
         uint32_t                        m_num_tx_bufs{0}                                   ;
         uint32_t                        m_buf_tx_size{0}                                   ;
-        // std::vector<MemoryPool*>        p_mempool                                          ;
-        MemoryPool*                       p_tx_mempool{nullptr}                              ;
+        // std::vector<DMAMemoryPool*>        p_mempool                                          ;
+        DMAMemoryPool*                    p_tx_mempool{nullptr}                              ;
         std::vector<IXGBE_RxRingBuffer*>  p_rx_ring_buffers                                  ;
         std::vector<IXGBE_TxRingBuffer*>  p_tx_ring_buffers                                  ;
         uint32_t                          m_used_tx_buf_num{0}                               ;     
