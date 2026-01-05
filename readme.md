@@ -8,7 +8,7 @@ This project does not realize all the functions provided in https://github.com/e
 2. Future extension. `BasicDev`, `RxRingBuffer` and `TxRingbufer` are all abstract classes. This makes future extension available.
 3. Better Naming. Some functions and variables are renamed for better understanding.
 # Hierarchy illustration
-![[hierarchy.png]]
+![The hierarchy of the classes in this project](hierarchy.png)
 1. `BasicDev` is an abstract class. In this project, `Intel82599Dev` is a realization of it in Intel NIC. A new realization can be done in the future. (For example, FPGA-based NIC driver)
 2. `DMAMemoryAllocator` is a helper class, which is implemented using singleton pattern. The function is to allocate DMA-enabled memory.
 3. `DMAMemoryPool` is a DMA-memory based memory pool.
