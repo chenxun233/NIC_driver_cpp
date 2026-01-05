@@ -13,4 +13,10 @@ This project does not realize all the functions provided in https://github.com/e
 2. `DMAMemoryAllocator` is a helper class, which is implemented using singleton pattern. The function is to allocate DMA-enabled memory.
 3. `DMAMemoryPool` is a DMA-memory based memory pool.
 4. `RxRingBuffer` and `TxRingBuffer` are two abstract classes.
-5. `IXGBE_RxRingBuffer` and `IXGBE_TxRingBuffer` are the realization of the two abstract ring buffer classes. Both of them contain `DMAMemoryPool`. 
+5. `IXGBE_RxRingBuffer` and `IXGBE_TxRingBuffer` are the realization of the two abstract ring buffer classes. Both of them contain `DMAMemoryPool`.
+# How to run
+1. For compilation, just run `cmake -S . -B build` and then `cmake --build build`
+2. For function testing. cd to `build` folder and command `./main` The default PCIe address is `0000:04:00.0` and the BAR index is `0`. For you own PCIe device, check the corresponding PCIe address by using `lspci` in the shell.
+# Future work
+1. A new driver class for FPGA-based NIC will be added to this project.
+2. Multiple queue function is to be realized in the future.
