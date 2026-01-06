@@ -81,7 +81,6 @@ bool Intel82599Dev::_getGroupID(){
     std::string group_name = group_target.filename().string();
     int group_id = std::stoi(group_name);
     this->m_fds.group_id = group_id;
-    success("VFIO group id for device %s is %d", this->m_basic_para.pci_addr.c_str(), group_id);
     return true;
 }
 
@@ -96,7 +95,6 @@ bool Intel82599Dev::_getContainerFD(){
         }
         m_fds.container_fd = cfd;
     }
-    success("VFIO container fd acquired: %d", cfd);
     return true;
 }
 
@@ -112,7 +110,6 @@ bool Intel82599Dev::_getGroupFD(){
         return false;
     }
     this->m_fds.group_fd = gfd;
-    success("VFIO group fd acquired: %d", gfd);
     return true;
 }
 
@@ -158,7 +155,6 @@ bool Intel82599Dev::_addGroup2Container(){
         warn("set Type1 IOMMU for the container: %s", strerror(errno));
         return false;
     }
-    success("VFIO group %d added to container %d", this->m_fds.group_fd, this->m_fds.container_fd);
     return true;
 
 }
@@ -174,7 +170,6 @@ bool Intel82599Dev::_getDeviceFD(){
         return false;
     }
     this->m_fds.device_fd = dfd;
-    success("VFIO device fd acquired: %d", dfd);
     return true;
 }
 
@@ -203,7 +198,6 @@ bool Intel82599Dev::_getBARAddr (uint8_t bar_index) {
             return false;
         }
         m_basic_para.p_bar_addr[i] = temp_addr;
-		success("BAR %d mapped at address %p, size: %llu bytes", i, (void*)temp_addr, region_info.size);
  
     }
     return true;         
@@ -223,7 +217,6 @@ bool Intel82599Dev::_enableDMA() {
 	assert(pread(this->m_fds.device_fd, &dma, 2, conf_reg.offset + command_register_offset) == 2);
 	dma |= 1 << bus_master_enable_bit;
 	assert(pwrite(this->m_fds.device_fd, &dma, 2, conf_reg.offset + command_register_offset) == 2);
-	success("DMA enabled on device %s", this->m_basic_para.pci_addr.c_str());
     return true;
 }
 
@@ -231,7 +224,7 @@ bool Intel82599Dev::_enableDMA() {
 
 
 
-bool Intel82599Dev::initHardware(const int interrupt_interval) {
+bool Intel82599Dev::initHardware() {
 	info("Resetting device...");
 	// section 4.6.3.1 - disable all interrupts
 	this->_dev_disable_IRQ();
@@ -247,7 +240,8 @@ bool Intel82599Dev::initHardware(const int interrupt_interval) {
 	// section 4.6.5 - statistical counters
 	// reset-on-read registers, just read them once
 	(void)this->_readStatus();
-    this->_initialize_interrupt(interrupt_interval);
+	this->_initRxDescRingRegs();
+	this->_initTxDescRingRegs();
 	success("Hardware initialized");
     return true;
 };
@@ -283,7 +277,6 @@ bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, ui
 		// p_mempool.push_back(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
-		success("Linked memory pool to RX ring buffer %d", i);
     }
     return true;
 }
@@ -334,7 +327,7 @@ bool Intel82599Dev::_dev_rst_hardware(){
 }
 
 bool Intel82599Dev::_get_mac_address(){
-	mac_address_type mac;
+	MacAddress mac;
 	uint32_t rar_low = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RAL(0));
 	uint32_t rar_high = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RAH(0));
 
@@ -371,29 +364,7 @@ bool Intel82599Dev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)
 	(void)size;
 	(void)queue_id;
 	return true; }
-// 	if (queue_id >= m_basic_para.num_tx_queues) {
-// 		warn("Invalid TX queue id %d", queue_id);
-// 		return false;
-// 	}
-// 	struct pkt_buf* buf = p_tx_ring_buffers[queue_id]->getMemPool()->takeOutPktBuf();
-// 	if (!buf) return false;
-// 	buf->size = size;
-// 	memcpy(buf->data, p_data, size);
-// 	p_tx_ring_buffers[queue_id]->getMemPool()->pushBackPktBuf(buf);
 
-// 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-// 		struct pkt_buf* buf = p_tx_mempool->takeOutPktBuf();
-// 		buf->size = PKT_SIZE;
-// 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
-// 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
-// 		bufs_with_data[buf_id] = buf;
-// 	}
-// 	// return them all to the mempool, all future allocations will return bufs_with_data with the data set above
-// 	for (int buf_id = 0; buf_id < NUM_BUFS; buf_id++) {
-// 		p_tx_mempool->pushBackPktBuf(bufs_with_data[buf_id]);
-// 	}
-// 	return true;
-// }
 
 bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
 	m_used_tx_buf_num = num_buf;
@@ -561,61 +532,23 @@ bool Intel82599Dev::_setRxDescriptorRing(){
 		warn("RX buffer parameters not set");
 		return false;
 	}
-	// make sure that rx is disabled while re-configuring it
-	// the datasheet also wants us to disable some crypto-offloading related rx paths (but we don't care about them)
-	clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
-	// no fancy dcb or vt, just a single 128kb packet buffer for us
-	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RXPBSIZE(0), IXGBE_RXPBSIZE_128KB);
-	for (int i = 1; i < 8; i++) {
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RXPBSIZE(i), 0);
-	}
 
-	// always enable CRC offloading
-	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_HLREG0, IXGBE_HLREG0_RXCRCSTRP);
-	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RDRXCTL, IXGBE_RDRXCTL_CRCSTRIP);
-
-	// accept broadcast packets
-	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_FCTRL, IXGBE_FCTRL_BAM);
 
 	// per-queue config, same for all queues
 	for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
-		debug("initializing rx queue %d", i);
-		// enable advanced rx descriptors, we could also get away with legacy descriptors, but they aren't really easier
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_SRRCTL(i), (get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_SRRCTL(i)) & ~IXGBE_SRRCTL_DESCTYPE_MASK) | IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF);
-		// drop_en causes the nic to drop packets if no rx descriptors are available instead of buffering them
-		// a single overflowing queue can fill up the whole buffer and impact operations if not setting this flag
-		set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_SRRCTL(i), IXGBE_SRRCTL_DROP_EN);
-		// setup descriptor ring, see section 7.1.9
-		uint32_t ring_size_bytes = m_num_rx_bufs * sizeof(union ixgbe_adv_rx_desc);
-		DMAMemoryPair DMA_mem_pair = DMAMemoryAllocator::getInstance().allocDMAMemory(ring_size_bytes, this->m_fds.container_fd);
-		// neat trick from Snabb: initialize to 0xFF to prevent rogue memory accesses on premature DMA activation
-		memset(DMA_mem_pair.virt, -1, ring_size_bytes);
-		// tell the device where it can write to (its iova, so its view)
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDBAL(i), (uint32_t) (DMA_mem_pair.iova & 0xFFFFFFFFull));
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDBAH(i), (uint32_t) (DMA_mem_pair.iova >> 32));
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDLEN(i), ring_size_bytes);
-		// set ring to empty at start
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDH(i), 0);
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDT(i), 0);
+
 
 		// private data for the driver, 0-initialized
         if (p_rx_ring_buffers[i]== nullptr){
             error("RX ring buffer %d is nullptr", i);
+			return false;
         }
-        p_rx_ring_buffers[i]->allocDMAMem2DescRing(DMA_mem_pair);
+
+		p_rx_ring_buffers[i]->configDMAAddr2NIC(m_basic_para.p_bar_addr[0], i, m_fds.container_fd);
+        p_rx_ring_buffers[i]->allocDMAMem2DescRing();
 		p_rx_ring_buffers[i]->linkDescWithPKTBuf();
 
 	}
-
-	// last step is to set some magic bits mentioned in the last sentence in 4.6.7
-	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_CTRL_EXT, IXGBE_CTRL_EXT_NS_DIS);
-	// this flag probably refers to a broken feature: it's reserved and initialized as '1' but it must be set to '0'
-	// there isn't even a constant in ixgbe_types.h for this flag
-	for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
-		clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_DCA_RXCTRL(i), 1 << 12);
-	}
-	// start RX
-	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
 	success("finished RX initialization");
 	return true;
 }
@@ -625,47 +558,15 @@ bool Intel82599Dev::_setTxDescriptorRing(){
 		warn("TX buffer parameters not set");
 		return false;
 	}
-	// crc offload and small packet padding
-	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_HLREG0, IXGBE_HLREG0_TXCRCEN | IXGBE_HLREG0_TXPADEN);
-
-	// set default buffer size allocations
-	// see also: section 4.6.11.3.4, no fancy features like DCB and VTd
-	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXPBSIZE(0), IXGBE_TXPBSIZE_40KB);
-	for (int i = 1; i < 8; i++) {
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXPBSIZE(i), 0);
-	}
-	// required when not using DCB/VTd
-	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_DTXMXSZRQ, 0xFFFF);
-	clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RTTDCS, IXGBE_RTTDCS_ARBDIS);
 
 	// per-queue config for all queues
 	for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
 		debug("initializing tx queue %d", i);
-
 		// setup descriptor ring, see section 7.1.9
-		uint32_t ring_size_bytes = m_num_tx_bufs * sizeof(union ixgbe_adv_tx_desc);
-		DMAMemoryPair DMA_mem_pair = DMAMemoryAllocator::getInstance().allocDMAMemory(ring_size_bytes, this->m_fds.container_fd);
-		memset(DMA_mem_pair.virt, -1, ring_size_bytes);
-		// tell the device where it can write to (its iova, so its view)
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAL(i), (uint32_t) (DMA_mem_pair.iova & 0xFFFFFFFFull));
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDBAH(i), (uint32_t) (DMA_mem_pair.iova >> 32));
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDLEN(i), ring_size_bytes);
-		debug("tx ring %d phy addr:  0x%012lX", i, DMA_mem_pair.iova);
-		debug("tx ring %d virt addr: 0x%012lX", i, (uintptr_t) DMA_mem_pair.virt);
-
-		// descriptor writeback magic values, important to get good performance and low PCIe overhead
-		// see 7.2.3.4.1 and 7.2.3.5 for an explanation of these values and how to find good ones
-		// we just use the defaults from DPDK here, but this is a potentially interesting point for optimizations
-		uint32_t txdctl = get_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXDCTL(i));
-		// there are no defines for this in ixgbe_type.h for some reason
-		// pthresh: 6:0, hthresh: 14:8, wthresh: 22:16
-		txdctl &= ~(0x7F | (0x7F << 8) | (0x7F << 16)); // clear bits
-		txdctl |= (36 | (8 << 8) | (4 << 16)); // from DPDK
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXDCTL(i), txdctl);
-        p_tx_ring_buffers[i]->allocDMAMem2DescRing(DMA_mem_pair);
+		p_tx_ring_buffers[i]->configDMAAddr2NIC(m_basic_para.p_bar_addr[0], i, m_fds.container_fd);
+        p_tx_ring_buffers[i]->allocDMAMem2DescRing();
 	}
 	// final step: enable DMA
-	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
 	return true;
 
 }
@@ -786,18 +687,18 @@ bool Intel82599Dev::enableDevInterrupt(){
 		if (!m_interrupt_para.interrupt_queues[queue_id].interrupt_enabled) {
             warn("Interrupt queue %d not properly initialized", queue_id);
 		return false;
-	}
-	switch (m_interrupt_para.interrupt_type) {
-		case VFIO_PCI_MSIX_IRQ_INDEX:
-			_enableDevMSIxInterrupt(queue_id);
-			break;
-		case VFIO_PCI_MSI_IRQ_INDEX:
-			_enableDevMSIInterrupt(queue_id);
-			break;
-		default:
-			warn("Interrupt type not supported: %d", m_interrupt_para.interrupt_type);
-			return false;
-	}
+		}
+		switch (m_interrupt_para.interrupt_type) {
+			case VFIO_PCI_MSIX_IRQ_INDEX:
+				_enableDevMSIxInterrupt(queue_id);
+				break;
+			case VFIO_PCI_MSI_IRQ_INDEX:
+				_enableDevMSIInterrupt(queue_id);
+				break;
+			default:
+				warn("Interrupt type not supported: %d", m_interrupt_para.interrupt_type);
+				return false;
+		}
 	}
     debug("finished enabling interrupts");
 	return true;
@@ -815,11 +716,10 @@ bool Intel82599Dev::setPromisc(bool enable){
 }
 
 
-bool Intel82599Dev::_initialize_interrupt(const int &interrupt_interval){
-    debug("entered Intel82599Dev::_initialize_interrupt");
+bool Intel82599Dev::initializeInterrupt(const int &interrupt_interval){
+    debug("entered Intel82599Dev::initializeInterrupt");
 	return
 	this->_getDevIRQType()				&&
-	this->_allocIRQQueues()				&&
 	this->_setupIRQQueues(interrupt_interval);
 }
 
@@ -845,11 +745,6 @@ bool Intel82599Dev::_getDevIRQType(){
         return true;
 	}
     return false;
-}
-bool Intel82599Dev::_allocIRQQueues(){
-    debug("entered Intel82599Dev::_allocIRQQueues");
-	this->m_interrupt_para.interrupt_queues.resize(m_basic_para.num_rx_queues);
-	return true;
 }
 int Intel82599Dev::_injectEventFdToVFIODev_msi(){
 	debug("Enable MSI Interrupts");
@@ -933,11 +828,13 @@ bool Intel82599Dev::_setupIRQQueues(const int &interrupt_interval){
 			for (uint32_t rx_queue = 0; rx_queue < m_basic_para.num_rx_queues; rx_queue++) {
 				int vfio_event_fd = _injectEventFdToVFIODev_msix(rx_queue);
 				int vfio_epoll_fd = _vfio_epoll_ctl(vfio_event_fd);
-				m_interrupt_para.interrupt_queues[rx_queue].vfio_event_fd = vfio_event_fd;
-				m_interrupt_para.interrupt_queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
-				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.length = 0;
-				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.index = 0;
-				m_interrupt_para.interrupt_queues[rx_queue].interval = interrupt_interval;
+    			InterruptQueue   interrupt_queue;
+				interrupt_queue.vfio_event_fd = vfio_event_fd;
+				interrupt_queue.vfio_epoll_fd = vfio_epoll_fd;
+				interrupt_queue.moving_avg.length = 0;
+				interrupt_queue.moving_avg.index = 0;
+				interrupt_queue.interval = interrupt_interval;
+				m_interrupt_para.interrupt_queues.push_back(interrupt_queue);
 			}
 			break;
 		}
@@ -945,11 +842,13 @@ bool Intel82599Dev::_setupIRQQueues(const int &interrupt_interval){
 			int vfio_event_fd = _injectEventFdToVFIODev_msi();
 			int vfio_epoll_fd = _vfio_epoll_ctl(vfio_event_fd);
 			for (uint32_t rx_queue = 0; rx_queue < m_basic_para.num_rx_queues; rx_queue++) {
-				m_interrupt_para.interrupt_queues[rx_queue].vfio_event_fd = vfio_event_fd;
-				m_interrupt_para.interrupt_queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
-				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.length = 0;
-				m_interrupt_para.interrupt_queues[rx_queue].moving_avg.index = 0;
-				m_interrupt_para.interrupt_queues[rx_queue].interval = interrupt_interval;
+    			InterruptQueue   interrupt_queue;
+				interrupt_queue.vfio_event_fd = vfio_event_fd;
+				interrupt_queue.vfio_epoll_fd = vfio_epoll_fd;
+				interrupt_queue.moving_avg.length = 0;
+				interrupt_queue.moving_avg.index = 0;
+				interrupt_queue.interval = interrupt_interval;
+				m_interrupt_para.interrupt_queues.push_back(interrupt_queue);
 			}
 			break;
 		}
@@ -987,5 +886,50 @@ bool Intel82599Dev::wait4Link(){
 		max_wait -= poll_interval;
 	}
 	info("Link speed is %d Mbit/s", _get_link_speed());
+	return true;
+}
+
+bool Intel82599Dev::_initRxDescRingRegs(){
+		// make sure that rx is disabled while re-configuring it
+	// the datasheet also wants us to disable some crypto-offloading related rx paths (but we don't care about them)
+	clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
+	// no fancy dcb or vt, just a single 128kb packet buffer for us
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RXPBSIZE(0), IXGBE_RXPBSIZE_128KB);
+	for (int i = 1; i < 8; i++) {
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RXPBSIZE(i), 0);
+	}
+
+	// always enable CRC offloading
+	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_HLREG0, IXGBE_HLREG0_RXCRCSTRP);
+	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RDRXCTL, IXGBE_RDRXCTL_CRCSTRIP);
+
+	// accept broadcast packets
+	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_FCTRL, IXGBE_FCTRL_BAM);
+	// last step is to set some magic bits mentioned in the last sentence in 4.6.7
+	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_CTRL_EXT, IXGBE_CTRL_EXT_NS_DIS);
+	// this flag probably refers to a broken feature: it's reserved and initialized as '1' but it must be set to '0'
+	// there isn't even a constant in ixgbe_types.h for this flag
+	for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
+		clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_DCA_RXCTRL(i), 1 << 12);
+	}
+	// start RX
+	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RXCTRL, IXGBE_RXCTRL_RXEN);
+	return true;
+}
+
+bool Intel82599Dev::_initTxDescRingRegs(){
+	// crc offload and small packet padding
+	set_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_HLREG0, IXGBE_HLREG0_TXCRCEN | IXGBE_HLREG0_TXPADEN);
+
+	// set default buffer size allocations
+	// see also: section 4.6.11.3.4, no fancy features like DCB and VTd
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXPBSIZE(0), IXGBE_TXPBSIZE_40KB);
+	for (int i = 1; i < 8; i++) {
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TXPBSIZE(i), 0);
+	}
+	// required when not using DCB/VTd
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_DTXMXSZRQ, 0xFFFF);
+	clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RTTDCS, IXGBE_RTTDCS_ARBDIS);
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
 	return true;
 }

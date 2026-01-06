@@ -9,12 +9,13 @@
 
 class IXGBE_RxRingBuffer:public RxRingBuffer {
     public:
-        IXGBE_RxRingBuffer          (){}                                               ;
-        ~IXGBE_RxRingBuffer         (){}                                               ;
-        bool linkMemoryPool         (DMAMemoryPool* const mem_pool)  override          ;
-        bool allocDMAMem2DescRing   (const DMAMemoryPair& DMA_mem_pair)    override    ;
-        bool linkDescWithPKTBuf    ()               override                           ;
-        DMAMemoryPool* getMemPool() const { return p_mem_pool; } 
+        IXGBE_RxRingBuffer          (){};
+        ~IXGBE_RxRingBuffer         (){};
+        bool linkMemoryPool         (DMAMemoryPool* const mem_pool) override;
+        bool configDMAAddr2NIC      (uint8_t* BAR_addr,uint8_t index, int device_fd) override;
+        bool allocDMAMem2DescRing   () override    ;
+        bool linkDescWithPKTBuf     ()  override;
+        DMAMemoryPool* getMemPool   () const { return p_mem_pool; } 
     private:
         volatile union ixgbe_adv_rx_desc*               _p_descriptors                 ;
 };
@@ -22,10 +23,11 @@ class IXGBE_RxRingBuffer:public RxRingBuffer {
 
 class IXGBE_TxRingBuffer:public TxRingBuffer {
     public:
-        IXGBE_TxRingBuffer          (){}                                               ;
-        ~IXGBE_TxRingBuffer         (){}                                               ;
+        IXGBE_TxRingBuffer          (){};
+        ~IXGBE_TxRingBuffer         (){};
         bool linkMemoryPool         (DMAMemoryPool* const mem_pool)  override          ;
-        bool allocDMAMem2DescRing   (const DMAMemoryPair& DMA_mem_pair)    override    ;
+        bool configDMAAddr2NIC    (uint8_t* BAR_addr,uint8_t index, int device_fd)   override;
+        bool allocDMAMem2DescRing   ()    override    ;
         DMAMemoryPool* getMemPool() const { return p_mem_pool; }
         volatile union ixgbe_adv_tx_desc* getDescriptors() const { return _p_descriptors; }
     private:

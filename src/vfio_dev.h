@@ -13,30 +13,30 @@ struct QueuesPtr {
 
 class Intel82599Dev : public BasicDev{
     public:
-        Intel82599Dev(std::string pci_addr, uint8_t max_bar_index)                                                     ;
-        ~Intel82599Dev()                                                                                               ;
-        bool        initHardware(const int interrupt_interval)                override                           ;
-        bool        setDescriptorRings()                                      override                           ;
-        bool        enableDevQueues()                                         override                           ;
-        bool        enableDevInterrupt()                                      override                           ;
-        bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override    ;
-        bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override    ;
-        bool        sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)                     override    ;
-        bool        fillTxMemPool(uint32_t num_buf)                      override                           ;
-        void        send()                                    override                           ;
-
-        bool        setPromisc(bool enable)                             override                                 ;
-        bool        wait4Link()                                         override                                 ;
+        Intel82599Dev(std::string pci_addr, uint8_t max_bar_index);
+        ~Intel82599Dev();
+        bool        initHardware()                override;
+        bool        initializeInterrupt(const int &interrupt_interval)        override;
+        bool        setDescriptorRings()                                      override;
+        bool        enableDevQueues()                                         override;
+        bool        enableDevInterrupt()                                      override;
+        bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
+        bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
+        bool        sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)                     override;
+        bool        fillTxMemPool(uint32_t num_buf)                      override;
+        void        send()                                    override;
+        bool        setPromisc(bool enable)                             override;
+        bool        wait4Link()                                         override;
     private:
-        bool        _getFD()                                                 override                                 ;
-        bool        _getBARAddr (uint8_t bar_index)                              override                                 ;
-        bool        _enableDMA()                                             override                                 ;                                  
+        bool        _getFD()                                                 override;
+        bool        _getBARAddr (uint8_t bar_index)                          override;
+        bool        _enableDMA()                                             override;                                  
         bool        _getGroupID()                                                        ;
         bool        _getGroupFD()                                                        ;
         bool        _getContainerFD()                                                    ;
         bool        _getDeviceFD()                                                       ;
         bool        _addGroup2Container()                                              ;
-    private:
+    private:    
         bool        _dev_disable_IRQ()                                                     ;
         bool        _dev_clear_interrupts()                                                ;
         bool        _dev_rst_hardware()                                                    ;
@@ -46,16 +46,16 @@ class Intel82599Dev : public BasicDev{
         DevStatus    _readStatus()                                      override      ;
         void        _initStatus(DevStatus* stats)                       override      ;
     private:
-        bool        _setRxDescriptorRing()                                                 ;
-        bool        _setTxDescriptorRing()                                                 ;
-        bool        _enableDevRxQueue()                                                    ;
-        bool        _enableDevTxQueue()                                                    ;
+        bool        _setRxDescriptorRing();
+        bool        _setTxDescriptorRing();
+        bool        _initRxDescRingRegs();
+        bool        _initTxDescRingRegs();
+        bool        _enableDevRxQueue();
+        bool        _enableDevTxQueue();
         void        _enableDevMSIInterrupt(uint16_t queue_id)                              ;
         void        _enableDevMSIxInterrupt(uint16_t queue_id)                             ;
         uint32_t    _get_link_speed()                                                      ;
-        bool        _initialize_interrupt(const int &interrupt_interval)                   ;
         bool        _getDevIRQType()                                                       ;
-        bool        _allocIRQQueues()                                                      ;
         bool        _setupIRQQueues(const int &interrupt_interval)                         ;
         int         _injectEventFdToVFIODev_msi()                                          ;
         int         _injectEventFdToVFIODev_msix(int index)                                ;

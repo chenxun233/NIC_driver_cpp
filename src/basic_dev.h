@@ -1,3 +1,4 @@
+// this file contains an abstract class named BasicDev which defines the basic interfaces for a network device driver
 #ifndef BASIC_DEV_H
 #define BASIC_DEV_H
 #include <cstdint>
@@ -12,8 +13,8 @@
 #define MAX_INTERRUPT_VECTORS 32
 #define MSIX_IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + sizeof(int) * (MAX_INTERRUPT_VECTORS + 1))
 
-// #include "ixgbe_type.h"
-struct __attribute__((__packed__)) mac_address_type {
+//6-byte MAC address structure
+struct __attribute__((__packed__)) MacAddress {
 	uint8_t	addr[6];
 };
 
@@ -23,13 +24,15 @@ struct DevStatus {
     uint64_t    rx_bytes;
     uint64_t    tx_bytes;
 };
+// this struct is used for dynamic interrupt moderation
+// to be used in the future.
 struct interrupt_moving_avg {
 	uint32_t index; // The current index
 	uint32_t length; // The moving average length
 	uint64_t sum; // The moving average sum
 	uint64_t measured_rates[MOVING_AVERAGE_RANGE]; // The moving average window
 };
-
+// interrupt queue structure
 struct InterruptQueue {
 	int vfio_event_fd; // event fd
 	int vfio_epoll_fd; // epoll fd
@@ -41,13 +44,13 @@ struct InterruptQueue {
 	struct interrupt_moving_avg moving_avg; // The moving average of the hybrid interrupt
 };
 struct basic_para_type{
-	std::string   pci_addr;
-    uint8_t    max_bar_index;
-	uint16_t   num_rx_queues;
+	std::string   pci_addr; //the pci address you can find in lspci
+    uint8_t    max_bar_index; // the maximum bar index supported by the device
+	uint16_t   num_rx_queues; // the number of rx queues
 	uint16_t   num_tx_queues;
-    uint16_t   interrupt_timeout_ms;
-    std::array<uint8_t*,6>      p_bar_addr;
-    mac_address_type            mac_address;
+    uint16_t   interrupt_timeout_ms; 
+    std::array<uint8_t*,6>      p_bar_addr; // the BAR address
+    MacAddress            mac_address;
 };
 
 struct VfioFd{
@@ -58,16 +61,17 @@ struct VfioFd{
 };
 
 struct interruptPara{
-    uint32_t  itr_rate  ;
-    std::vector<InterruptQueue>   interrupt_queues        ;
-    uint8_t   interrupt_type          ;
+    uint32_t  itr_rate{0x028}; // interrupt throttling rate. Default is 
+    std::vector<InterruptQueue>   interrupt_queues;
+    uint8_t   interrupt_type; // MSI or MSIX currently
 };
 
 class BasicDev{
     public:
            BasicDev(std::string pci_addr,uint8_t max_bar_index )            ;
         virtual             ~BasicDev()   = default                         ;
-        virtual bool        initHardware(const int interrupt_interval)  = 0 ;
+        virtual bool        initHardware()  = 0 ;
+        virtual bool        initializeInterrupt(const int &interrupt_interval) = 0 ;
         virtual bool        setDescriptorRings()                        = 0 ;
         virtual bool        enableDevQueues()                           = 0 ;
         virtual bool        enableDevInterrupt()                        = 0 ;

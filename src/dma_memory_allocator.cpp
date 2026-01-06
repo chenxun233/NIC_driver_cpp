@@ -23,13 +23,17 @@ DMAMemoryAllocator::~DMAMemoryAllocator()
 
 DMAMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
     size = _alignUpU64(size, m_page_size);
+    // allocate IO virtual address aligned to page size to avoid overlap across mappings
+    uint64_t iova = _alignUpU64(m_next_iova, m_page_size);
+    if (iova > iova_end || iova + size - 1 > iova_end) {
+        error("IOMMU aperture exhausted: need 0x%llx bytes", (unsigned long long) size);
+        exit(EXIT_FAILURE);
+    }
     //allocate virtual address
     void* virt_addr = _allocDMAVirtualAddr(size);
-    // create IOMMU mapping
-    // allocate IO virtual address
-    uint64_t iova = m_next_iova;
-    // bind the two addresses.
     _bindIOVAWithVirtAddr(virt_addr, iova, size, container_fd);
+    // advance for next allocation
+    m_next_iova = iova + size;
     DMAMemoryPair DMA_mem_pair;
     DMA_mem_pair.virt = virt_addr;
     DMA_mem_pair.iova = iova;
@@ -49,22 +53,15 @@ void*  DMAMemoryAllocator::_allocDMAVirtualAddr(size_t size){
 
 // this function makes the physical address in DRAM shared both by virtual address space and IOVA. one is for CPU access, the other is for device DMA access.
 bool DMAMemoryAllocator::_bindIOVAWithVirtAddr(void* virt_addr, uint64_t iova, size_t size, int container_fd){
-	m_next_iova = _alignUpU64(m_next_iova, m_page_size);
-	
-	if (m_next_iova > iova_end || m_next_iova + size - 1 > iova_end) {
-		error("IOMMU aperture exhausted: need 0x%llx bytes", (unsigned long long) size);
-		exit(EXIT_FAILURE);
-	}
-	
 	struct vfio_iommu_type1_dma_map dma_map ={};
 	dma_map.vaddr = (uint64_t) virt_addr;
 	// dma_map.vaddr = (uint64_t) 0x100000;
 	dma_map.iova = iova;
+    debug("virt_addr: %p, iova: 0x%llx, size: %llu", virt_addr, (unsigned long long)iova, (unsigned long long)size);
 	dma_map.size = size;
 	dma_map.argsz = sizeof(dma_map);
 	dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;
 	check_err(ioctl(container_fd, VFIO_IOMMU_MAP_DMA, &dma_map), "IOMMU Map DMA Memory");
-	m_next_iova = iova + size;
 	return true;
 }
 

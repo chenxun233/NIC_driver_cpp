@@ -19,7 +19,7 @@ m_basic_para()
     m_basic_para.num_rx_queues = 0;
     m_basic_para.num_tx_queues = 0;
     m_basic_para.max_bar_index = max_bar_index;
-    m_basic_para.interrupt_timeout_ms = 100;
+    m_basic_para.interrupt_timeout_ms = 100; 
     for (auto& addr : m_basic_para.p_bar_addr) {
         addr = nullptr;
     }
