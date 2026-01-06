@@ -10,8 +10,9 @@ class RxRingBuffer{
         
         virtual ~RxRingBuffer() = default;
         virtual bool linkMemoryPool( DMAMemoryPool* const mem_pool) = 0;
-        virtual bool configDMAAddr2NIC(uint8_t* BAR_addr,uint8_t index, int device_fd) = 0;
-        virtual bool allocDMAMem2DescRing()= 0;
+        virtual bool allocDMAMemPair(uint8_t index, int device_fd) = 0;
+        virtual bool bindIOVAWithNIC(uint8_t* BAR_addr, uint8_t index) = 0;
+        virtual bool bindVirtWithDesc()= 0;
     protected:
         virtual bool             linkDescWithPKTBuf() = 0;
     protected:
@@ -28,8 +29,9 @@ class TxRingBuffer{
     public:
         virtual ~TxRingBuffer() = default;
         virtual bool linkMemoryPool( DMAMemoryPool* const mem_pool) = 0;
-        virtual bool configDMAAddr2NIC(uint8_t* BAR_addr,uint8_t index, int device_fd) = 0;
-        virtual bool allocDMAMem2DescRing() = 0;
+        virtual bool allocDMAMemPair(uint8_t index, int device_fd) = 0;
+        virtual bool bindIOVAWithNIC(uint8_t* BAR_addr, uint8_t index) = 0;
+        virtual bool bindVirtWithDesc() = 0;
         uint16_t getTxIndex() const { return m_tx_idx; }
         uint16_t getCleanIndex() const { return clean_index; }
         void    setTxIndex(const uint16_t& idx) { m_tx_idx = idx; }
