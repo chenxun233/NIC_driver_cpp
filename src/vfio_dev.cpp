@@ -246,19 +246,7 @@ bool Intel82599Dev::initHardware() {
     return true;
 };
 
-bool Intel82599Dev::setDescriptorRings() {
-	if (m_num_rx_bufs == 0 || m_buf_rx_size == 0 ||
-		m_num_tx_bufs == 0 || m_buf_tx_size == 0) {
-		warn("RX or TX buffer parameters not set");
-		return false;
-	}
-	info("Setting up descriptor rings...");
-	this->_setRxDescriptorRing();
-	// section 4.6.8 - init tx
-	this->_setTxDescriptorRing();
-	info("Descriptor rings set up");
-    return true;
-}
+
 
 bool Intel82599Dev::enableDevQueues() {
     debug("entered Intel82599Dev::enableDevQueues");
@@ -277,6 +265,9 @@ bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, ui
 		// p_mempool.push_back(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
+		p_rx_ring_buffers[i]->configDMAAddr2NIC(m_basic_para.p_bar_addr[0], i, m_fds.container_fd);
+        p_rx_ring_buffers[i]->allocDMAMem2DescRing();
+		p_rx_ring_buffers[i]->linkDescWithPKTBuf();
     }
     return true;
 }
@@ -288,6 +279,9 @@ bool Intel82599Dev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, ui
     for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
         p_tx_ring_buffers.push_back(new IXGBE_TxRingBuffer);
 		p_tx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
+		// setup descriptor ring, see section 7.1.9
+		p_tx_ring_buffers[i]->configDMAAddr2NIC(m_basic_para.p_bar_addr[0], i, m_fds.container_fd);
+        p_tx_ring_buffers[i]->allocDMAMem2DescRing();
     }
     return true;
 }
@@ -526,50 +520,6 @@ uint16_t Intel82599Dev::_calc_ip_checksum(uint8_t* data, uint32_t len) {
 }
 
 
-bool Intel82599Dev::_setRxDescriptorRing(){
-	info("initializing RX descriptor rings");
-	if (m_num_rx_bufs == 0 || m_buf_rx_size == 0) {
-		warn("RX buffer parameters not set");
-		return false;
-	}
-
-
-	// per-queue config, same for all queues
-	for (uint16_t i = 0; i < m_basic_para.num_rx_queues; i++) {
-
-
-		// private data for the driver, 0-initialized
-        if (p_rx_ring_buffers[i]== nullptr){
-            error("RX ring buffer %d is nullptr", i);
-			return false;
-        }
-
-		p_rx_ring_buffers[i]->configDMAAddr2NIC(m_basic_para.p_bar_addr[0], i, m_fds.container_fd);
-        p_rx_ring_buffers[i]->allocDMAMem2DescRing();
-		p_rx_ring_buffers[i]->linkDescWithPKTBuf();
-
-	}
-	success("finished RX initialization");
-	return true;
-}
-
-bool Intel82599Dev::_setTxDescriptorRing(){
-	if (m_num_tx_bufs == 0 || m_buf_tx_size == 0) {
-		warn("TX buffer parameters not set");
-		return false;
-	}
-
-	// per-queue config for all queues
-	for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
-		debug("initializing tx queue %d", i);
-		// setup descriptor ring, see section 7.1.9
-		p_tx_ring_buffers[i]->configDMAAddr2NIC(m_basic_para.p_bar_addr[0], i, m_fds.container_fd);
-        p_tx_ring_buffers[i]->allocDMAMem2DescRing();
-	}
-	// final step: enable DMA
-	return true;
-
-}
 bool Intel82599Dev::_enableDevRxQueue(){
 	for (uint16_t queue_id = 0; queue_id < m_basic_para.num_rx_queues; queue_id++){
 		// enable queue and wait if necessary

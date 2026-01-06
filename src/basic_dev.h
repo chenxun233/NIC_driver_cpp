@@ -72,7 +72,6 @@ class BasicDev{
         virtual             ~BasicDev()   = default                         ;
         virtual bool        initHardware()  = 0 ;
         virtual bool        initializeInterrupt(const int &interrupt_interval) = 0 ;
-        virtual bool        setDescriptorRings()                        = 0 ;
         virtual bool        enableDevQueues()                           = 0 ;
         virtual bool        enableDevInterrupt()                        = 0 ;
         virtual bool        wait4Link()                                 = 0 ;

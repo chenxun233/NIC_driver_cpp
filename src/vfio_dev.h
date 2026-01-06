@@ -17,7 +17,6 @@ class Intel82599Dev : public BasicDev{
         ~Intel82599Dev();
         bool        initHardware()                override;
         bool        initializeInterrupt(const int &interrupt_interval)        override;
-        bool        setDescriptorRings()                                      override;
         bool        enableDevQueues()                                         override;
         bool        enableDevInterrupt()                                      override;
         bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
@@ -46,8 +45,6 @@ class Intel82599Dev : public BasicDev{
         DevStatus    _readStatus()                                      override      ;
         void        _initStatus(DevStatus* stats)                       override      ;
     private:
-        bool        _setRxDescriptorRing();
-        bool        _setTxDescriptorRing();
         bool        _initRxDescRingRegs();
         bool        _initTxDescRingRegs();
         bool        _enableDevRxQueue();

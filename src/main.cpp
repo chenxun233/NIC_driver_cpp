@@ -17,11 +17,10 @@ uint64_t interrupt_interval = 100;
 
 void thread1(){
     std::unique_ptr<BasicDev> device1 = std::make_unique<Intel82599Dev>("0000:04:00.0",0);
+    device1->initHardware();
     device1->setRxRingBuffers(NUM_OF_QUEUE,NUM_OF_RX_BUF, PKT_BUF_SIZE);
     device1->setTxRingBuffers(NUM_OF_QUEUE,NUM_OF_TX_BUF, PKT_BUF_SIZE);
-    device1->initHardware();
     device1->initializeInterrupt(INTERRUPT_INITIAL_INTERVAL);
-    device1->setDescriptorRings()    ;
     device1->enableDevQueues()       ;
     device1->enableDevInterrupt()    ;
     device1->setPromisc(true)        ;
@@ -32,11 +31,10 @@ void thread1(){
 
 void thread2(){
     std::unique_ptr<BasicDev> device2 = std::make_unique<Intel82599Dev>("0000:05:00.0",0);
+    device2->initHardware();
     device2->setRxRingBuffers(NUM_OF_QUEUE,NUM_OF_RX_BUF, PKT_BUF_SIZE);
     device2->setTxRingBuffers(NUM_OF_QUEUE,NUM_OF_TX_BUF, PKT_BUF_SIZE);
-    device2->initHardware();
     device2->initializeInterrupt(INTERRUPT_INITIAL_INTERVAL);
-    device2->setDescriptorRings()    ;
     device2->enableDevQueues()       ;
     device2->enableDevInterrupt()    ;
     device2->setPromisc(true)        ;
