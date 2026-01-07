@@ -43,7 +43,6 @@ void thread2(){
     device2->send();
 }
 
-
 int main() {
     std::thread t1(thread1);
     std::thread t2(thread2);

@@ -265,9 +265,9 @@ bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, ui
 		// p_mempool.push_back(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
-		p_rx_ring_buffers[i]->allocDMAMemPair(i, m_fds.container_fd);
-		p_rx_ring_buffers[i]->bindIOVAWithNIC(m_basic_para.p_bar_addr[0], i);
-        p_rx_ring_buffers[i]->bindVirtWithDesc();
+		p_rx_ring_buffers[i]->allocDMAMemory(i, m_fds.container_fd);
+		p_rx_ring_buffers[i]->bindDMAMemIOVAWithNIC(m_basic_para.p_bar_addr[0], i);
+        p_rx_ring_buffers[i]->bindDMAMemVirtWithDesc();
 		p_rx_ring_buffers[i]->linkDescWithPKTBuf();
     }
     return true;
@@ -280,10 +280,9 @@ bool Intel82599Dev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, ui
     for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
         p_tx_ring_buffers.push_back(new IXGBE_TxRingBuffer);
 		p_tx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
-		// setup descriptor ring, see section 7.1.9
-		p_tx_ring_buffers[i]->allocDMAMemPair(i, m_fds.container_fd);
-		p_tx_ring_buffers[i]->bindIOVAWithNIC(m_basic_para.p_bar_addr[0], i);
-        p_tx_ring_buffers[i]->bindVirtWithDesc();
+		p_tx_ring_buffers[i]->allocDMAMemory(i, m_fds.container_fd);
+		p_tx_ring_buffers[i]->bindDMAMemIOVAWithNIC(m_basic_para.p_bar_addr[0], i);
+        p_tx_ring_buffers[i]->bindDMAMemVirtWithDesc();
     }
     return true;
 }

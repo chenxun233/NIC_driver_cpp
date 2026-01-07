@@ -12,11 +12,10 @@ bool IXGBE_RxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 		return false;
 	}
 	p_mem_pool = mem_pool;
-	
 	return true;
 };
 
-bool IXGBE_RxRingBuffer::bindVirtWithDesc(){
+bool IXGBE_RxRingBuffer::bindDMAMemVirtWithDesc(){
 	if (!m_DMA_mem_pair.virt) {
 		error("invalid DMA memory provided to RX ring buffer for descriptor ring");
 		return false;
@@ -32,7 +31,7 @@ bool IXGBE_RxRingBuffer::linkDescWithPKTBuf(){
 		return false;
 	}
 	if (_p_descriptors == nullptr) {
-		error("descriptor ring not linked to DMA memory, call bindVirtWithDesc first");
+		error("descriptor ring not linked to DMA memory, call bindDMAMemVirtWithDesc first");
 		return false;
 	}
 	for (uint32_t i = 0; i < p_mem_pool->getNumOfBufs(); i++) {
@@ -52,7 +51,7 @@ bool IXGBE_RxRingBuffer::linkDescWithPKTBuf(){
 	return true;
 };
 
-bool IXGBE_RxRingBuffer::allocDMAMemPair(uint8_t index, int container_fd){
+bool IXGBE_RxRingBuffer::allocDMAMemory(uint8_t index, int container_fd){
 		debug("initializing rx queue %d", index);
 		// setup descriptor ring, see section 7.1.9
 		uint32_t ring_size_bytes = p_mem_pool->getNumOfBufs() * sizeof(union ixgbe_adv_rx_desc);
@@ -63,7 +62,7 @@ bool IXGBE_RxRingBuffer::allocDMAMemPair(uint8_t index, int container_fd){
 	return true;
 };
 
-bool IXGBE_RxRingBuffer::bindIOVAWithNIC(uint8_t* BAR_addr, uint8_t index){
+bool IXGBE_RxRingBuffer::bindDMAMemIOVAWithNIC(uint8_t* BAR_addr, uint8_t index){
 		// enable advanced rx descriptors, we could also get away with legacy descriptors, but they aren't really easier
 		set_bar_reg32(BAR_addr, IXGBE_SRRCTL(index), (get_bar_reg32(BAR_addr, IXGBE_SRRCTL(index)) & ~IXGBE_SRRCTL_DESCTYPE_MASK) | IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF);
 		// drop_en causes the nic to drop packets if no rx descriptors are available instead of buffering them
@@ -90,7 +89,7 @@ bool IXGBE_TxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	return true;
 };
 
-bool IXGBE_TxRingBuffer::allocDMAMemPair(uint8_t index, int container_fd){
+bool IXGBE_TxRingBuffer::allocDMAMemory(uint8_t index, int container_fd){
 		uint32_t ring_size_bytes = p_mem_pool->getNumOfBufs() * sizeof(union ixgbe_adv_tx_desc);
 		DMAMemoryPair DMA_mem_pair = DMAMemoryAllocator::getInstance().allocDMAMemory(ring_size_bytes, container_fd);
 		memset(DMA_mem_pair.virt, -1, ring_size_bytes);
@@ -99,7 +98,7 @@ bool IXGBE_TxRingBuffer::allocDMAMemPair(uint8_t index, int container_fd){
 		return true;
 }
 
-bool IXGBE_TxRingBuffer::bindIOVAWithNIC(uint8_t* BAR_addr, uint8_t index){
+bool IXGBE_TxRingBuffer::bindDMAMemIOVAWithNIC(uint8_t* BAR_addr, uint8_t index){
 		// tell the device where it can write to (its iova, so its view)
 		set_bar_reg32(BAR_addr, IXGBE_TDBAL(index), (uint32_t) (m_DMA_mem_pair.iova & 0xFFFFFFFFull));
 		set_bar_reg32(BAR_addr, IXGBE_TDBAH(index), (uint32_t) (m_DMA_mem_pair.iova >> 32));
@@ -118,7 +117,7 @@ bool IXGBE_TxRingBuffer::bindIOVAWithNIC(uint8_t* BAR_addr, uint8_t index){
 		return true;
 };
 
-bool IXGBE_TxRingBuffer::bindVirtWithDesc(){
+bool IXGBE_TxRingBuffer::bindDMAMemVirtWithDesc(){
 	if (!m_DMA_mem_pair.virt) {
 		error("invalid DMA memory provided to TX ring buffer for descriptor ring");
 		return false;
