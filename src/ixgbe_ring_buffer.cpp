@@ -20,7 +20,7 @@ bool IXGBE_RxRingBuffer::bindDMAMemVirtWithDesc(){
 		error("invalid DMA memory provided to RX ring buffer for descriptor ring");
 		return false;
 	}
-	_p_descriptors = (union ixgbe_adv_rx_desc*) m_DMA_mem_pair.virt;
+	_p_descriptors_start_addr = (union ixgbe_adv_rx_desc*) m_DMA_mem_pair.virt;
 	
 	return true;
 };
@@ -30,13 +30,13 @@ bool IXGBE_RxRingBuffer::linkDescWithPKTBuf(){
 		error("memory pool not linked, call linkMemoryPool first");
 		return false;
 	}
-	if (_p_descriptors == nullptr) {
+	if (_p_descriptors_start_addr == nullptr) {
 		error("descriptor ring not linked to DMA memory, call bindDMAMemVirtWithDesc first");
 		return false;
 	}
 	for (uint32_t i = 0; i < p_mem_pool->getNumOfBufs(); i++) {
-		volatile union ixgbe_adv_rx_desc* rxd = _p_descriptors + i;
-		struct pkt_buf* buf = p_mem_pool->takeOutPktBuf();
+		volatile union ixgbe_adv_rx_desc* rxd = _p_descriptors_start_addr + i;
+		struct pkt_buf* buf = p_mem_pool->takeOutOnePktBuf();
 		if (!buf) {
 			error("failed to allocate rx descriptor");
 			return false;
@@ -46,7 +46,6 @@ bool IXGBE_RxRingBuffer::linkDescWithPKTBuf(){
 		rxd->read.pkt_addr = buf->iova + data_offset;
 		rxd->read.hdr_addr = 0;
 		// we need to return the virtual address in the rx function which the descriptor doesn't know by default
-		v_buf_addr.push_back((void*) buf);
 	}
 	return true;
 };
@@ -122,6 +121,38 @@ bool IXGBE_TxRingBuffer::bindDMAMemVirtWithDesc(){
 		error("invalid DMA memory provided to TX ring buffer for descriptor ring");
 		return false;
 	}
-	_p_descriptors = (union ixgbe_adv_tx_desc*) m_DMA_mem_pair.virt;
+	_p_descriptors_start_addr = (union ixgbe_adv_tx_desc*) m_DMA_mem_pair.virt;
+	return true;
+};
+
+bool IXGBE_TxRingBuffer::linkDescWithPKTBuf(){
+	// if (p_mem_pool == nullptr) {
+	// 	error("memory pool not linked, call linkMemoryPool first");
+	// 	return false;
+	// }
+	// if (_p_descriptors_start_addr == nullptr) {
+	// 	error("descriptor ring not linked to DMA memory, call bindDMAMemVirtWithDesc first");
+	// 	return false;
+	// }
+	// for (uint32_t i = 0; i < p_mem_pool->getNumOfBufs(); i++) {
+	// 	volatile union ixgbe_adv_tx_desc* rxd = _p_descriptors_start_addr + i;
+	// 	struct pkt_buf* buf = p_mem_pool->takeOutOnePktBuf();
+	// 	if (!buf) {
+	// 		error("failed to allocate rx descriptor");
+	// 		return false;
+	// 	}
+	// 	// where the data buffer is
+	// 	uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
+	// 	txd->read.buffer_addr = buf->iova + data_offset;
+	// 	// always the same flags: one buffer (EOP), advanced data descriptor, CRC offload, data length
+	// 	txd->read.cmd_type_len =
+	// 		IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS | IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DTYP_DATA | buf->size;
+	// 	// no fancy offloading stuff - only the total payload length
+	// 	// implement offloading flags here:
+	// 	// 	* ip checksum offloading is trivial: just set the offset
+	// 	// 	* tcp/udp checksum offloading is more annoying, you have to precalculate the pseudo-header checksum
+	// 	txd->read.olinfo_status = buf->size << IXGBE_ADVTXD_PAYLEN_SHIFT;
+	// 	// we need to return the virtual address in the rx function which the descriptor doesn't know by default
+	// }
 	return true;
 };

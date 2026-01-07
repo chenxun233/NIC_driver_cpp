@@ -18,7 +18,7 @@ class IXGBE_RxRingBuffer:public RxRingBuffer {
         bool linkDescWithPKTBuf     ()  override;
         DMAMemoryPool* getMemPool   () const { return p_mem_pool; } 
     private:
-        volatile union ixgbe_adv_rx_desc*               _p_descriptors                 ;
+        volatile union ixgbe_adv_rx_desc*               _p_descriptors_start_addr                 ;
 };
 
 
@@ -30,9 +30,10 @@ class IXGBE_TxRingBuffer:public TxRingBuffer {
         bool allocDMAMemory    (uint8_t index, int device_fd)   override;
         bool bindDMAMemIOVAWithNIC    (uint8_t* BAR_addr, uint8_t index) override;        
         bool bindDMAMemVirtWithDesc   ()    override    ;
+        bool linkDescWithPKTBuf     ()  override;
         DMAMemoryPool* getMemPool() const { return p_mem_pool; }
-        volatile union ixgbe_adv_tx_desc* getDescriptors() const { return _p_descriptors; }
+        volatile union ixgbe_adv_tx_desc* getDescriptorStartAddr() const { return _p_descriptors_start_addr; }
     private:
-        volatile union ixgbe_adv_tx_desc*               _p_descriptors                 ;
+        volatile union ixgbe_adv_tx_desc*               _p_descriptors_start_addr                 ;
 
 };

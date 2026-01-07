@@ -366,10 +366,9 @@ bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
 	struct DMAMemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
-	
 	struct pkt_buf** bufs_with_data = new struct pkt_buf*[num_buf];
 	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
-		struct pkt_buf* buf = mempool->takeOutPktBuf();
+		struct pkt_buf* buf = mempool->takeOutOnePktBuf();
 		buf->size = PKT_SIZE;
 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
@@ -394,21 +393,17 @@ void Intel82599Dev::send(){
 
 	// array of bufs_with_data sent out in a batch
 	struct pkt_buf* bufs_with_data[BATCH_SIZE];
+	
 	// tx loop
 	for (;;) {
 		// we cannot immediately recycle packets, we need to allocate new packets every time
 		// the old packets might still be used by the NIC: tx is async
-		(void)tx_ring->getMemPool()->takePktBuf(bufs_with_data, BATCH_SIZE);
-		// track stats
-		
-
 	// the descriptor is explained in section 7.2.3.2.4
+	(void)tx_ring->getMemPool()->takeOutMultiPktBuf(bufs_with_data, BATCH_SIZE);
 	// we just use a struct copy & pasted from intel, but it basically has two formats (hence a union):
 	// 1. the write-back format which is written by the NIC once sending it is finished this is used in step 1
 	// 2. the read format which is read by the NIC and written by us, this is used in step 2
-
 	uint16_t clean_index = tx_ring->getCleanIndex(); // next descriptor to clean up
-
 	// step 1: clean up descriptors that were sent out by the hardware and return them to the mempool
 	// start by reading step 2 which is done first for each packet
 	// cleaning up must be done in batches for performance reasons, so this is unfortunately somewhat complicated
@@ -424,10 +419,11 @@ void Intel82599Dev::send(){
 		// calculcate the index of the last transcriptor in the clean batch
 		// Only clean when the cleanable number is more than TX_CLEAN_BATCH.
 		int32_t cleanup_to = clean_index + TX_CLEAN_BATCH - 1;
+		// handle wrap-around
 		if ((uint32_t)cleanup_to >= m_used_tx_buf_num) {
 			cleanup_to -= m_used_tx_buf_num;
 		}
-		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptors() + cleanup_to;
+		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptorStartAddr() + cleanup_to;
 		uint32_t status = txd->wb.status;
 		// hardware sets this flag as soon as it's sent out, we can give back all bufs_with_data in the batch back to the mempool
 		if (status & IXGBE_ADVTXD_STAT_DD) {
@@ -460,7 +456,7 @@ void Intel82599Dev::send(){
 		struct pkt_buf* buf = bufs_with_data[sent];
 		// remember virtual address to clean it up later
 		tx_ring->getMemPool()->setUsedBufAddr(tx_ring->getTxIndex(), (void*) buf);
-		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptors() + tx_ring->getTxIndex();
+		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptorStartAddr() + tx_ring->getTxIndex();
 		tx_ring->setTxIndex(next_index);
 		// NIC reads from here
 		uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);

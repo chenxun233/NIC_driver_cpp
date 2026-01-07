@@ -53,13 +53,13 @@ bool DMAMemoryPool::_initEachPktBuf(){
     return true;
 }
 
-uint32_t DMAMemoryPool::takePktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs){
+uint32_t DMAMemoryPool::takeOutMultiPktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs){
     uint32_t actual_num = 0;
     if (num_bufs > m_free_stack_top) {
         num_bufs = m_free_stack_top;
     }
     for (uint32_t i = 0; i < num_bufs; i++) {
-        struct pkt_buf* buf = takeOutPktBuf();
+        struct pkt_buf* buf = takeOutOnePktBuf();
         if (!buf) {
             warn("Failed to take out pkt_buf");
             break;
@@ -70,7 +70,7 @@ uint32_t DMAMemoryPool::takePktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs)
     return actual_num;
 }
 
-struct pkt_buf* DMAMemoryPool::takeOutPktBuf(){
+struct pkt_buf* DMAMemoryPool::takeOutOnePktBuf(){
     if (m_free_stack_top == 0) {
         warn("no free pkt_buf available");
         return nullptr;
