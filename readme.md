@@ -17,6 +17,7 @@ This project does not realize all the functions provided in https://github.com/e
 5. `IXGBE_RxRingBuffer` and `IXGBE_TxRingBuffer` are the realization of the two abstract ring buffer classes. Both of them contain `DMAMemoryPool`.
 # Ring buffer structure
 ![Simplified ringbuffer structure](simplified_ringbuffer_structure.png)
+
 Here a simplified ring buffer structure is given. When working with devices supporting VFIO, there will always be two types of memory addresses, one is for the outter devices, named IO virtual address (IOVA). The other is the vritual address for the host (shorten as virt here). The allocation of the two memory address is managed by dma_memory_allocator. This figure shows how Memory pool and the descriptors work together in one ring buffer so the outter device can access the data inside the memory pool indirectly.
 # How to run
 1. For compilation, just run `cmake -S . -B build` and then `cmake --build build`
