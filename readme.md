@@ -1,6 +1,8 @@
 # Introduction
 Inspired by https://github.com/emmericp/ixy, which is a simple C-based user space NIC driver, this project is a C++ realization of it.
 By rebuilding the project in C++, it is better for beginners to understand the hierarchy and workflow of user-space NIC driver.
+
+Note this program only support Linux.
 # Content
 This project does not realize all the functions provided in https://github.com/emmericp/ixy yet. It only supports VFIO based NIC. Also, in terms of example applications, only data sending is realized, which is from `ixy-pktgen.c` in `ixy/src/app`
 # Features
@@ -20,8 +22,10 @@ This project does not realize all the functions provided in https://github.com/e
 
 Here a simplified ring buffer structure is given. When working with devices supporting VFIO, there will always be two types of memory addresses, one is for the outter devices, named IO virtual address (IOVA). The other is the vritual address for the host (shorten as virt here). The allocation of the two memory address is managed by dma_memory_allocator. This figure shows how Memory pool and the descriptors work together in one ring buffer so the outter device can access the data inside the memory pool indirectly.
 # How to run
-1. For compilation, just run `cmake -S . -B build` and then `cmake --build build`
-2. For function testing. cd to `build` folder and command `./main`.The default PCIe addresses are `0000:04:00.0` and `0000:05:00.0` while the BAR index is `0`. The program will start two threads, each for one NIC. The two NICs should be connected together. What you expect is that two NICs send data to each other.
+1. First of all, unbind the NIC from the keneral driver. This can be done by running `scripts/setup-vfio.sh`. Just input the PCIe address, separated with space.
+2. Enable hugepage in your Linux system. Run `scripts/setup-hugepages.sh` with the number you desire. This script allocate 2-MB hugepages.
+3. For compilation, just run `cmake -S . -B build` and then `cmake --build build`
+4. For function testing. cd to `build` folder and command `./main`.The default PCIe addresses are `0000:04:00.0` and `0000:05:00.0` while the BAR index is `0`. The program will start two threads, each for one NIC. The two NICs should be connected together. What you expect is that two NICs send data to each other.
 For you own PCIe device, check the corresponding PCIe address by using `lspci` in the shell.
 # Future work
 1. A new driver class for FPGA-based NIC will be added to this project.
