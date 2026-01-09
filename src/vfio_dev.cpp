@@ -13,10 +13,6 @@
 #include <sys/epoll.h>
 #include "dma_memory_allocator.h"
 #include "ixgbe_ring_buffer.h"
-#define PKT_SIZE 60
-#define BATCH_SIZE 32 // the number of pkt to be sent per time
-#define TX_CLEAN_BATCH 32 // the number of tx descriptors to clean in one batch
-#define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
 #include <string>
 
 
@@ -225,7 +221,7 @@ bool Intel82599Dev::_enableDMA() {
 
 
 bool Intel82599Dev::initHardware() {
-	info("Resetting device...");
+	info("Resetting device [%s]", m_basic_para.pci_addr.c_str());
 	// section 4.6.3.1 - disable all interrupts
 	this->_dev_disable_IRQ();
 	this->_dev_rst_hardware();
@@ -265,10 +261,11 @@ bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, ui
 		// p_mempool.push_back(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
-		p_rx_ring_buffers[i]->allocDMAMemory(i, m_fds.container_fd);
-		p_rx_ring_buffers[i]->bindDMAMemIOVAWithNIC(m_basic_para.p_bar_addr[0], i);
-        p_rx_ring_buffers[i]->bindDMAMemVirtWithDesc();
-		p_rx_ring_buffers[i]->linkDescWithPKTBuf();
+		p_rx_ring_buffers[i]->createDescriptorRing(m_fds.container_fd,m_basic_para.p_bar_addr[0],num_buf,sizeof(union ixgbe_adv_rx_desc),i);
+		for (uint16_t j = 0; j < num_buf; j++){
+		struct pkt_buf* buf = p_rx_ring_buffers[i]->getMemPool()->popOutOnePktBufFromTop();
+		p_rx_ring_buffers[i]->linkPKTBufToDesc(buf, j);
+		}
     }
     return true;
 }
@@ -280,9 +277,7 @@ bool Intel82599Dev::setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, ui
     for (uint16_t i = 0; i < m_basic_para.num_tx_queues; i++) {
         p_tx_ring_buffers.push_back(new IXGBE_TxRingBuffer);
 		p_tx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
-		p_tx_ring_buffers[i]->allocDMAMemory(i, m_fds.container_fd);
-		p_tx_ring_buffers[i]->bindDMAMemIOVAWithNIC(m_basic_para.p_bar_addr[0], i);
-        p_tx_ring_buffers[i]->bindDMAMemVirtWithDesc();
+		p_tx_ring_buffers[i]->createDescriptorRing(m_fds.container_fd,m_basic_para.p_bar_addr[0],num_buf,sizeof(union ixgbe_adv_tx_desc),i);
     }
     return true;
 }
@@ -362,13 +357,12 @@ bool Intel82599Dev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)
 
 
 bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
-	m_used_tx_buf_num = num_buf;
 	struct DMAMemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
 	struct pkt_buf** bufs_with_data = new struct pkt_buf*[num_buf];
 	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
-		struct pkt_buf* buf = mempool->takeOutOnePktBuf();
+		struct pkt_buf* buf = mempool->popOutOnePktBufFromTop();
 		buf->size = PKT_SIZE;
 		memcpy(buf->data, pkt_data, sizeof(pkt_data));
 		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
@@ -376,15 +370,16 @@ bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
 	}
 	// return them all to the mempool, all future allocations will return bufs_with_data with the data set above
 	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
-		mempool->pushBackPktBuf(bufs_with_data[buf_id]);
+		mempool->freePktBuf(bufs_with_data[buf_id]);
 	}
 	delete [] bufs_with_data;
 	return true;
 }
 
+
 void Intel82599Dev::send(){
+
     IXGBE_TxRingBuffer *tx_ring = p_tx_ring_buffers[0];
-	
 	uint64_t last_stats_printed = BasicDev::_monotonic_time();
 	uint64_t counter = 0;
 	struct DevStatus stats_old, stats;
@@ -396,105 +391,38 @@ void Intel82599Dev::send(){
 	
 	// tx loop
 	for (;;) {
-		// we cannot immediately recycle packets, we need to allocate new packets every time
-		// the old packets might still be used by the NIC: tx is async
-	// the descriptor is explained in section 7.2.3.2.4
-	(void)tx_ring->getMemPool()->takeOutMultiPktBuf(bufs_with_data, BATCH_SIZE);
-	// we just use a struct copy & pasted from intel, but it basically has two formats (hence a union):
-	// 1. the write-back format which is written by the NIC once sending it is finished this is used in step 1
-	// 2. the read format which is read by the NIC and written by us, this is used in step 2
-	uint16_t clean_index = tx_ring->getCleanIndex(); // next descriptor to clean up
-	// step 1: clean up descriptors that were sent out by the hardware and return them to the mempool
-	// start by reading step 2 which is done first for each packet
-	// cleaning up must be done in batches for performance reasons, so this is unfortunately somewhat complicated
-	while (true) {
-		// figure out how many descriptors can be cleaned up
-		int32_t cleanable = tx_ring->getTxIndex() - clean_index; // tx_index is always ahead of clean (invariant of our queue)
-		if (cleanable < 0) { // handle wrap-around
-			cleanable = m_used_tx_buf_num + cleanable;
-		}
-		if (cleanable < TX_CLEAN_BATCH) {
-			break;
-		}
-		// calculcate the index of the last transcriptor in the clean batch
-		// Only clean when the cleanable number is more than TX_CLEAN_BATCH.
-		int32_t cleanup_to = clean_index + TX_CLEAN_BATCH - 1;
-		// handle wrap-around
-		if ((uint32_t)cleanup_to >= m_used_tx_buf_num) {
-			cleanup_to -= m_used_tx_buf_num;
-		}
-		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptorStartAddr() + cleanup_to;
-		uint32_t status = txd->wb.status;
-		// hardware sets this flag as soon as it's sent out, we can give back all bufs_with_data in the batch back to the mempool
-		if (status & IXGBE_ADVTXD_STAT_DD) {
-			int32_t i = clean_index;
-			while (true) {
-				struct pkt_buf* buf = (struct pkt_buf*) tx_ring->getMemPool()->getUsedBufAddr(i);
-				tx_ring->getMemPool()->pushBackPktBuf(buf);
-				if (i == cleanup_to) {
-					break;
-				}
-				i = wrap_ring(i, m_used_tx_buf_num);
+		uint16_t m_desc_head = tx_ring->getDescHeadIdx(); // next descriptor to clean up
+		(void)tx_ring->getMemPool()->popOutMultiPktBuf(bufs_with_data, BATCH_SIZE);
+		
+		tx_ring->cleanDescriptorRing(TX_CLEAN_BATCH);
+		uint32_t sent;
+		uint32_t next_index;
+		for (sent = 0; sent < BATCH_SIZE; sent++) {
+			next_index = wrap_ring(tx_ring->getDescTailIdx(), tx_ring->getMemPool()->getNumOfBufs());
+			// we are full if the next index is the one we are trying to reclaim
+			if (m_desc_head == next_index) {
+				break;;
 			}
-			// next descriptor to be cleaned up is one after the one we just cleaned
-			clean_index = wrap_ring(cleanup_to, m_used_tx_buf_num);
-		} else {
-			// clean the whole batch or nothing; yes, this leaves some packets in
-			// the queue forever if you stop transmitting, but that's not a real concern
-			break;
+			tx_ring->linkPKTBufWithDesc();
+			// printf("the Tx index is %u \n", tx_ring->getDescTailIdx());
 		}
-	}
-	tx_ring->setCleanIndex(clean_index);
-	// step 2: send out as many of our packets as possible
-	uint32_t sent;
-	for (sent = 0; sent < BATCH_SIZE; sent++) {
-		uint32_t next_index = wrap_ring(tx_ring->getTxIndex(), tx_ring->getMemPool()->getNumOfBufs());
-		// we are full if the next index is the one we are trying to reclaim
-		if (clean_index == next_index) {
-			break;
-		}
-		struct pkt_buf* buf = bufs_with_data[sent];
-		// remember virtual address to clean it up later
-		tx_ring->getMemPool()->setUsedBufAddr(tx_ring->getTxIndex(), (void*) buf);
-		volatile union ixgbe_adv_tx_desc* txd = tx_ring->getDescriptorStartAddr() + tx_ring->getTxIndex();
-		tx_ring->setTxIndex(next_index);
-		// NIC reads from here
-		uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
-		txd->read.buffer_addr = buf->iova + data_offset;
-		// always the same flags: one buffer (EOP), advanced data descriptor, CRC offload, data length
-		txd->read.cmd_type_len =
-			IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS | IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DTYP_DATA | buf->size;
-		// no fancy offloading stuff - only the total payload length
-		// implement offloading flags here:
-		// 	* ip checksum offloading is trivial: just set the offset
-		// 	* tcp/udp checksum offloading is more annoying, you have to precalculate the pseudo-header checksum
-		txd->read.olinfo_status = buf->size << IXGBE_ADVTXD_PAYLEN_SHIFT;
-	}
-	// send out by advancing tail, i.e., pass control of the bufs_with_data to the nic
-	// this seems like a textbook case for a release memory order, but Intel's driver doesn't even use a compiler barrier here
-	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tx_ring->getTxIndex());
-
-	if ((counter++ & 0xFFF) == 0) {
-		uint64_t time = BasicDev::_monotonic_time();
-		if (time - last_stats_printed > 1000 * 1000 * 1000) {
-			// every second
-			if (bufs_with_data[0]) {
-				printf("bufs_with_data[0] (%u bytes): ", bufs_with_data[0]->size);
-				for (uint32_t i = 0; i < bufs_with_data[0]->size; i++) {
-					printf("%02x ", bufs_with_data[0]->data[i]);
-				}
-				printf("\n");
+		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tx_ring->getDescTailIdx());
+		
+		// print
+		if ((counter++ & 0xFFF) == 0) {
+			uint64_t time = BasicDev::_monotonic_time();
+			if (time - last_stats_printed > 1000 * 1000 * 1000) {
+				stats = this->_readStatus();
+				_print_stats_diff(&stats, &stats_old, time - last_stats_printed);
+				stats_old = stats;
+				last_stats_printed = time;
 			}
-			stats = this->_readStatus();
-			_print_stats_diff(&stats, &stats_old, time - last_stats_printed);
-			stats_old = stats;
-			last_stats_printed = time;
 		}
 	}
 }
 
 
-}
+
 
 void Intel82599Dev::_initStatus(DevStatus* stats){
 	stats->rx_bytes = 0;
@@ -879,4 +807,40 @@ bool Intel82599Dev::_initTxDescRingRegs(){
 	clear_bar_flags32(m_basic_para.p_bar_addr[0], IXGBE_RTTDCS, IXGBE_RTTDCS_ARBDIS);
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_DMATXCTL, IXGBE_DMATXCTL_TE);
 	return true;
+}
+// this function sends packets in [TDH, TDT).
+void Intel82599Dev::infoNIC(uint16_t tail_index){
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tail_index);
+}
+
+
+
+
+void Intel82599Dev::loopSendTest(uint32_t num_buf){
+
+	uint64_t last_stats_printed = BasicDev::_monotonic_time();
+	uint64_t counter = 0;
+	struct DevStatus stats_old, stats;
+	_initStatus(&stats);
+	_initStatus(&stats_old);
+
+	for (;;){
+
+        p_tx_ring_buffers[0]->cleanDescriptorRing(TX_CLEAN_BATCH);
+		for (uint32_t i = 0; i < num_buf; i++) {
+			if(!p_tx_ring_buffers[0]->fillPktBuf(pkt_data, PKT_SIZE)) break;
+		}	
+        uint16_t tail = p_tx_ring_buffers[0]->linkPKTBufWithDesc();
+        this->infoNIC(tail);
+		// printf("sent\n");
+		if ((counter++ & 0xFFF) == 0) {
+			uint64_t time = BasicDev::_monotonic_time();
+			if (time - last_stats_printed > 1000 * 1000 * 1000) {
+				stats = this->_readStatus();
+				_print_stats_diff(&stats, &stats_old, time - last_stats_printed);
+				stats_old = stats;
+				last_stats_printed = time;
+			}
+		}
+    }
 }

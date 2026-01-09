@@ -22,26 +22,21 @@ class DMAMemoryPool{
     public:
         DMAMemoryPool(uint32_t num_buf, uint32_t buf_size, int container_fd = -1);
         ~DMAMemoryPool();
-        struct pkt_buf*             takeOutOnePktBuf();
-        uint32_t                    takeOutMultiPktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs);
-        void                        pushBackPktBuf(struct pkt_buf* buf);
+        struct pkt_buf*             popOutOnePktBufFromTop();
+        uint32_t                    popOutMultiPktBuf(struct pkt_buf** v_p_bufs, uint32_t num_bufs);
+        void                        freePktBuf(struct pkt_buf* buf);
+        struct pkt_buf*             getBuf(uint16_t idx);
         uint32_t                    getNumOfBufs() const     { return m_num_bufs; }
         uint32_t                    getBufSize()   const     { return m_buf_size; }
-        void*                       getUsedBufAddr(uint32_t index) const { return index>m_num_bufs ? nullptr : v_p_used_buf_addr[index]; }
-        bool                        setUsedBufAddr(uint32_t index, void* addr) {
-                                                                                if (index>m_num_bufs) return false;
-                                                                                v_p_used_buf_addr[index] = addr; return true; }
-        uintptr_t                   getBaseIOVirtualAddr() const { return m_DMA_mem_pair.iova; }
+                                                       
     private:
         bool                        _allocateMemory();
-        bool                        _initEachPktBuf();
-        uint32_t                    m_num_bufs{0}                   ;
-        uint32_t                    m_buf_size{0}                   ;
-        uint64_t                    m_total_size{0}                 ;
-        uint32_t                    m_free_stack_top{0}             ;
-        int                         m_container_fd{-1}              ;
-        std::vector<void*>          v_p_used_buf_addr               ;        
-        std::vector<uint32_t>       m_free_stack                    ;
-        DMAMemoryPair               m_DMA_mem_pair                  ; 
+        bool                        _createPktBufRing();
+        uint32_t                    m_num_bufs{0};
+        uint32_t                    m_buf_size{0};
+        uint32_t                    m_free_stack_top{0};
+        int                         m_container_fd{-1} ;   
+        std::vector<uint32_t>       v_free_stack;
+        DMAMemoryPair               m_DMA_mem_pair; 
 
 };

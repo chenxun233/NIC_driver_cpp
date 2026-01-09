@@ -57,7 +57,6 @@ bool DMAMemoryAllocator::_bindIOVAWithVirtAddr(void* virt_addr, uint64_t iova, s
 	dma_map.vaddr = (uint64_t) virt_addr;
 	// dma_map.vaddr = (uint64_t) 0x100000;
 	dma_map.iova = iova;
-    debug("virt_addr: %p, iova: 0x%llx, size: %llu", virt_addr, (unsigned long long)iova, (unsigned long long)size);
 	dma_map.size = size;
 	dma_map.argsz = sizeof(dma_map);
 	dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;

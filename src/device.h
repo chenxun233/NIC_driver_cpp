@@ -6,7 +6,6 @@
 #include <stddef.h> // add this for offsetof
 
 #include "log.h"
-#include "memory.h"
 #include "ixgbe_type.h"
 
 #define MAX_QUEUES 64

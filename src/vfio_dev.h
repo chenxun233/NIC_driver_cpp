@@ -4,6 +4,14 @@
 #include <vector>
 #include "memory_pool.h"
 #include "ixgbe_ring_buffer.h"
+
+#define PKT_SIZE 60
+#define BATCH_SIZE 64 // the number of pkt to be sent per time
+#define TX_CLEAN_BATCH 128 // the number of tx descriptors to clean in one batch
+#ifndef wrap_ring
+#define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
+#endif
+
 struct QueuesPtr {
     void*                   rx;
     void*                   tx;
@@ -22,8 +30,10 @@ class Intel82599Dev : public BasicDev{
         bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
         bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
         bool        sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)                     override;
-        bool        fillTxMemPool(uint32_t num_buf)                      override;
-        void        send()                                    override;
+        bool        fillTxMemPool(uint32_t num_buf)                     override;
+        void        send()                                              override;
+        void        infoNIC(uint16_t tail_index);
+        void        loopSendTest(uint32_t num_buf);
         bool        setPromisc(bool enable)                             override;
         bool        wait4Link()                                         override;
     private:
@@ -67,7 +77,5 @@ class Intel82599Dev : public BasicDev{
         DMAMemoryPool*                    p_tx_mempool{nullptr}                              ;
         std::vector<IXGBE_RxRingBuffer*>  p_rx_ring_buffers                                  ;
         std::vector<IXGBE_TxRingBuffer*>  p_tx_ring_buffers                                  ;
-        uint32_t                          m_used_tx_buf_num{0}                               ;     
 
 };
-

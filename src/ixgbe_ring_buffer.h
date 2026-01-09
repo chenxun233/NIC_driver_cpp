@@ -7,33 +7,41 @@
 
 
 
-class IXGBE_RxRingBuffer:public RxRingBuffer {
+class IXGBE_RxRingBuffer:public RingBuffer {
     public:
-        IXGBE_RxRingBuffer          (){};
-        ~IXGBE_RxRingBuffer         (){};
-        bool linkMemoryPool         (DMAMemoryPool* const mem_pool) override;
-        bool allocDMAMemory        (uint8_t index, int device_fd) override;
-        bool bindDMAMemIOVAWithNIC          (uint8_t* BAR_addr, uint8_t index) override;
-        bool bindDMAMemVirtWithDesc   () override    ;
-        bool linkDescWithPKTBuf     ()  override;
-        DMAMemoryPool* getMemPool   () const { return p_mem_pool; } 
+                        IXGBE_RxRingBuffer (){};
+                        ~IXGBE_RxRingBuffer(){};
+        bool            linkPKTBufToDesc         (pkt_buf* buf, uint16_t desc_idx)  override;
+        bool            linkMemoryPool           ( DMAMemoryPool* const mem_pool) override;
+        DMAMemoryPool*  getMemPool   () const { return p_mem_pool; } 
     private:
-        volatile union ixgbe_adv_rx_desc*               _p_descriptors_start_addr                 ;
+        bool            _bindDescMemIOVA          (uint8_t* BAR_addr, uint8_t index) override;
+        bool            _bindDescMemVirt   () override    ;
+        volatile union ixgbe_adv_rx_desc*               p_desc_ring_start;
 };
 
 
-class IXGBE_TxRingBuffer:public TxRingBuffer {
+class IXGBE_TxRingBuffer:public RingBuffer {
     public:
-        IXGBE_TxRingBuffer          (){};
-        ~IXGBE_TxRingBuffer         (){};
-        bool linkMemoryPool         (DMAMemoryPool* const mem_pool)  override          ;
-        bool allocDMAMemory    (uint8_t index, int device_fd)   override;
-        bool bindDMAMemIOVAWithNIC    (uint8_t* BAR_addr, uint8_t index) override;        
-        bool bindDMAMemVirtWithDesc   ()    override    ;
-        bool linkDescWithPKTBuf     ()  override;
-        DMAMemoryPool* getMemPool() const { return p_mem_pool; }
-        volatile union ixgbe_adv_tx_desc* getDescriptorStartAddr() const { return _p_descriptors_start_addr; }
+                        IXGBE_TxRingBuffer      ();
+                        ~IXGBE_TxRingBuffer     ();
+        bool            linkPKTBufToDesc        (pkt_buf* buf, uint16_t desc_idx)  override;
+        bool            linkMemoryPool         ( DMAMemoryPool* const mem_pool) override;
+        uint16_t        linkPKTBufWithDesc     ();
+        bool            fillPktBuf              (const char* data, uint32_t size);
+        bool            freeUsedBuf             ();
+        bool            cleanDescriptorRing     (uint16_t min_clean_num);
+        DMAMemoryPool*  getMemPool              () const { return p_mem_pool; }
     private:
-        volatile union ixgbe_adv_tx_desc*               _p_descriptors_start_addr                 ;
+        bool            _bindDescMemIOVA        (uint8_t* BAR_addr, uint8_t index) override;        
+        bool            _bindDescMemVirt        ()    override    ;
+        uint16_t        _calcIPChecksum         (const uint8_t* data, uint32_t size);
+    private:
+        volatile union ixgbe_adv_tx_desc*   p_desc_ring_start;
+        
+
+
+        
+
 
 };
