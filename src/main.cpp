@@ -1,6 +1,5 @@
 #include <memory>
 #include "vfio_dev.h"
-#include "log.h"
 #include <thread>
 #include <pthread.h>
 

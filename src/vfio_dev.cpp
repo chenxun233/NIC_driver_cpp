@@ -6,12 +6,10 @@
 #include <fcntl.h>
 #include "log.h"
 #include <linux/vfio.h>
-#include <memory>
 #include "device.h"
 #include "ixgbe_type.h"
 #include <sys/eventfd.h>
 #include <sys/epoll.h>
-#include "dma_memory_allocator.h"
 #include "ixgbe_ring_buffer.h"
 #include <string>
 
@@ -357,7 +355,7 @@ bool Intel82599Dev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)
 
 
 bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
-	struct DMAMemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
+	 DMAMemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
 	// pre-fill all our packet buffers with some templates that can be modified later
 	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
 	struct pkt_buf** bufs_with_data = new struct pkt_buf*[num_buf];
@@ -403,7 +401,7 @@ void Intel82599Dev::send(){
 			if (m_desc_head == next_index) {
 				break;;
 			}
-			tx_ring->linkPKTBufWithDesc();
+			tx_ring->linkPktBufWithDesc();
 			// printf("the Tx index is %u \n", tx_ring->getDescTailIdx());
 		}
 		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tx_ring->getDescTailIdx());
@@ -830,7 +828,7 @@ void Intel82599Dev::loopSendTest(uint32_t num_buf){
 		for (uint32_t i = 0; i < num_buf; i++) {
 			if(!p_tx_ring_buffers[0]->fillPktBuf(pkt_data, PKT_SIZE)) break;
 		}	
-        uint16_t tail = p_tx_ring_buffers[0]->linkPKTBufWithDesc();
+        uint16_t tail = p_tx_ring_buffers[0]->linkPktBufWithDesc();
         this->infoNIC(tail);
 		// printf("sent\n");
 		if ((counter++ & 0xFFF) == 0) {

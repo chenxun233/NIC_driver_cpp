@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <memory>
 #include <vector>
 #include "dma_memory_allocator.h"
 #define SIZE_PKT_BUF_HEADROOM 40

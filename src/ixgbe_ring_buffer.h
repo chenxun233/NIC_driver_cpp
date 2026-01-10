@@ -1,9 +1,7 @@
 #pragma once
 #include "memory_pool.h"
 #include "basic_ring_buffer.h"
-#include <memory>
 #include "ixgbe_type.h"
-#include <vector>
 
 
 
@@ -27,7 +25,7 @@ class IXGBE_TxRingBuffer:public RingBuffer {
                         ~IXGBE_TxRingBuffer     ();
         bool            linkPKTBufToDesc        (pkt_buf* buf, uint16_t desc_idx)  override;
         bool            linkMemoryPool         ( DMAMemoryPool* const mem_pool) override;
-        uint16_t        linkPKTBufWithDesc     ();
+        uint16_t        linkPktBufWithDesc     ();
         bool            fillPktBuf              (const char* data, uint32_t size);
         bool            freeUsedBuf             ();
         bool            cleanDescriptorRing     (uint16_t min_clean_num);

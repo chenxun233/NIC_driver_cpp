@@ -7,7 +7,7 @@
 
 #define PKT_SIZE 60
 #define BATCH_SIZE 64 // the number of pkt to be sent per time
-#define TX_CLEAN_BATCH 128 // the number of tx descriptors to clean in one batch
+#define TX_CLEAN_BATCH 256 // the number of tx descriptors to clean in one batch
 #ifndef wrap_ring
 #define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
 #endif

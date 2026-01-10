@@ -19,6 +19,7 @@ bool IXGBE_RxRingBuffer::_bindDescMemVirt(){
 
 bool IXGBE_RxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	p_mem_pool = mem_pool;
+	m_num_buf = mem_pool->getNumOfBufs();
 	if (!p_mem_pool) return false;
 	return true;
 };
@@ -81,9 +82,10 @@ IXGBE_TxRingBuffer::~IXGBE_TxRingBuffer(){
 
 bool IXGBE_TxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	p_mem_pool = mem_pool;
+	m_num_buf = mem_pool->getNumOfBufs();
 	if (!p_mem_pool) return false;
-	p_used_buf_addr = new pkt_buf*[p_mem_pool->getNumOfBufs()];
-	p_linked_buf_addr = new pkt_buf*[p_mem_pool->getNumOfBufs()];
+	p_used_buf_addr = new pkt_buf*[m_num_buf];
+	p_linked_buf_addr = new pkt_buf*[m_num_buf];
 	return true;
 }
 
@@ -115,17 +117,22 @@ bool IXGBE_TxRingBuffer::_bindDescMemVirt(){
 };
 
 
-uint16_t IXGBE_TxRingBuffer::linkPKTBufWithDesc(){
+uint16_t IXGBE_TxRingBuffer::linkPktBufWithDesc(){
 	struct pkt_buf* buf = getUsedBufAddr();
 	
 	while (buf) {
-		setLinkedBufAddr(buf);
 		uint16_t next_index = wrap_ring(m_desc_tail, m_num_desc);
 		if (next_index == m_desc_head) {
-			// ring full, put the buffer back and stop
-			setUsedBufAddr(buf);
+			// ring full, return buffer to pool (can't push back to FIFO front)
+			p_mem_pool->freePktBuf(buf);
+			// Also return any remaining buffers in the used queue back to pool
+			while ((buf = getUsedBufAddr()) != nullptr) {
+				p_mem_pool->freePktBuf(buf);
+			}
 			return m_desc_tail;
 		}
+		// Track buffer AFTER confirming ring has space
+		setLinkedBufAddr(buf);
 		volatile union ixgbe_adv_tx_desc* txd = p_desc_ring_start + m_desc_tail;
 		
 		// NIC reads from here
@@ -228,7 +235,6 @@ bool IXGBE_TxRingBuffer::cleanDescriptorRing(uint16_t min_clean_num){
 		cleanable = m_num_desc + cleanable;
 	}
 
-	// printf("cleanable is %d\n",cleanable);
 	if (cleanable < min_clean_num) {
 		return false;
 	}
@@ -240,20 +246,17 @@ bool IXGBE_TxRingBuffer::cleanDescriptorRing(uint16_t min_clean_num){
 	volatile union ixgbe_adv_tx_desc* txd = p_desc_ring_start + cleanup_to;
 	uint32_t status = txd->wb.status;
 	// only clean if the last descriptor in the batch is done
-	if (status & IXGBE_ADVTXD_STAT_DD) {
-		uint16_t i = m_desc_head;
-		struct pkt_buf* buf = (struct pkt_buf*) getLinkedBufAddr();
-		while (buf) {
-			p_mem_pool->freePktBuf(buf);
-			if (i == cleanup_to) {
-				m_desc_head = wrap_ring(cleanup_to, m_num_desc);
-				return true;
-			}
-			i = wrap_ring(i, m_num_desc);
-			buf = (struct pkt_buf*) getLinkedBufAddr();
-			}
-		}
+	if (!(status & IXGBE_ADVTXD_STAT_DD)) {
+		return false;
+	}
 
-	// not reached
-	return false;
+	// Clean exactly min_clean_num descriptors and their corresponding buffers
+	for (uint16_t cleaned = 0; cleaned < min_clean_num; cleaned++) {
+		struct pkt_buf* buf = getLinkedBufAddr();
+		if (buf) {
+			p_mem_pool->freePktBuf(buf);
+		}
+	}
+	m_desc_head = wrap_ring(cleanup_to, m_num_desc);
+	return true;
 }
