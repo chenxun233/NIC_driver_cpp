@@ -18,5 +18,5 @@ file(GLOB_RECURSE IXY_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
-add_executable(main ${IXY_SOURCES})
-target_include_directories(main PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+add_executable(test_app_loopsend ${IXY_SOURCES})
+target_include_directories(test_app_loopsend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

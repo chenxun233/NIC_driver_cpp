@@ -33,7 +33,7 @@ Here a simplified ring buffer structure is given. When working with devices supp
 1. First of all, unbind the NIC from the keneral driver. This can be done by running `scripts/setup-vfio.sh`. Just input the PCIe address, separated with space.
 2. Enable hugepage in your Linux system. Run `scripts/setup-hugepages.sh` with the number you desire. This script allocate 2-MB hugepages.
 3. For compilation, just run `cmake -S . -B build` and then `cmake --build build`
-4. For function testing. cd to `build` folder and command `./main`.The default PCIe addresses are `0000:04:00.0` and `0000:05:00.0` while the BAR index is `0`. The program will start two threads, each for one NIC. The two NICs should be connected together. What you expect is that two NICs send data to each other.
+4. For function testing. cd to `build` folder and command `./test_app_loopsend`.The default PCIe addresses are `0000:04:00.0` and `0000:05:00.0` while the BAR index is `0`. The program will start two threads, each for one NIC. The two NICs should be connected together. What you expect is that two NICs send data to each other.
 For you own PCIe device, check the corresponding PCIe address by using `lspci` in the shell.
 # Future work
 1. A new driver class for FPGA-based NIC will be added to this project.
