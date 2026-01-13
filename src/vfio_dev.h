@@ -31,7 +31,6 @@ class Intel82599Dev : public BasicDev{
         bool        setTxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
         bool        sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)                     override;
         bool        fillTxMemPool(uint32_t num_buf)                     override;
-        void        send()                                              override;
         void        infoNIC(uint16_t tail_index);
         void        loopSendTest(uint32_t num_buf);
         bool        setPromisc(bool enable)                             override;

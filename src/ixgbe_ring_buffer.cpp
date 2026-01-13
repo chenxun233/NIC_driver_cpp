@@ -24,27 +24,36 @@ bool IXGBE_RxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	return true;
 };
 
-bool IXGBE_RxRingBuffer::linkPKTBufToDesc(pkt_buf* buf, uint16_t desc_idx){
-	if (p_mem_pool == nullptr) {
+uint16_t IXGBE_RxRingBuffer::linkPktBufWithDesc(uint16_t batch_size){
+	uint16_t linked = 0;
+	if (!p_mem_pool) {
 		error("memory pool not linked, call linkMemoryPool first");
-		return false;
+		return m_desc_tail;
 	}
-	if (p_desc_ring_start == nullptr) {
+	if (!p_desc_ring_start) {
 		error("descriptor ring not linked to DMA memory, call bindDMAMemVirtWithDesc first");
-		return false;
+		return m_desc_tail;
 	}
-		volatile union ixgbe_adv_rx_desc* rxd = p_desc_ring_start + desc_idx;
+	while (linked < batch_size) {
+		struct pkt_buf* buf = p_mem_pool->popOutOnePktBufFromTop();
 		if (!buf) {
 			error("failed to allocate rx descriptor");
-			return false;
+			break;
 		}
-		// where the data buffer is
+		uint16_t next_index = wrap_ring(m_desc_tail, m_num_desc);
+		if (next_index == m_desc_head) {
+			// ring full
+			p_mem_pool->freePktBuf(buf);
+			break;
+		}
+		volatile union ixgbe_adv_rx_desc* rxd = p_desc_ring_start + m_desc_tail;
 		uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
 		rxd->read.pkt_addr = buf->iova + data_offset;
 		rxd->read.hdr_addr = 0;
-		// we need to return the virtual address in the rx function which the descriptor doesn't know by default
-	
-	return true;
+		m_desc_tail = next_index;
+		linked++;
+	}
+	return m_desc_tail;
 };
 
 
@@ -84,8 +93,7 @@ bool IXGBE_TxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	p_mem_pool = mem_pool;
 	m_num_buf = mem_pool->getNumOfBufs();
 	if (!p_mem_pool) return false;
-	p_used_buf_addr = new pkt_buf*[m_num_buf];
-	p_linked_buf_addr = new pkt_buf*[m_num_buf];
+	p_used_buf_addr = new pkt_buf*[m_num_buf]();
 	return true;
 }
 
@@ -117,10 +125,14 @@ bool IXGBE_TxRingBuffer::_bindDescMemVirt(){
 };
 
 
-uint16_t IXGBE_TxRingBuffer::linkPktBufWithDesc(){
+uint16_t IXGBE_TxRingBuffer::linkPktBufWithDesc(uint16_t batch_size){
 	struct pkt_buf* buf = getUsedBufAddr();
-	
-	while (buf) {
+	// Allocate descriptor-sized tracking array on first use
+	if (!p_linked_buf_addr) {
+		p_linked_buf_addr = new pkt_buf*[m_num_desc]();
+	}
+	uint16_t linked = 0;
+	while (buf && linked < batch_size) {
 		uint16_t next_index = wrap_ring(m_desc_tail, m_num_desc);
 		if (next_index == m_desc_head) {
 			// ring full, return buffer to pool (can't push back to FIFO front)
@@ -131,8 +143,8 @@ uint16_t IXGBE_TxRingBuffer::linkPktBufWithDesc(){
 			}
 			return m_desc_tail;
 		}
-		// Track buffer AFTER confirming ring has space
-		setLinkedBufAddr(buf);
+		// Track buffer at the descriptor index AFTER confirming ring has space
+		p_linked_buf_addr[m_desc_tail] = buf;
 		volatile union ixgbe_adv_tx_desc* txd = p_desc_ring_start + m_desc_tail;
 		
 		// NIC reads from here
@@ -148,36 +160,9 @@ uint16_t IXGBE_TxRingBuffer::linkPktBufWithDesc(){
 		txd->read.olinfo_status = buf->size << IXGBE_ADVTXD_PAYLEN_SHIFT;
 		m_desc_tail = next_index;
 		buf = getUsedBufAddr();
+		linked++;
 	}
 	return m_desc_tail;
-}
-
-bool IXGBE_TxRingBuffer::linkPKTBufToDesc(pkt_buf* buf, uint16_t desc_idx){
-	if (p_mem_pool == nullptr) {
-		error("memory pool not linked, call linkMemoryPool first");
-		return false;
-	}
-	if (p_desc_ring_start == nullptr) {
-		error("descriptor ring not linked to DMA memory, call bindDMAMemVirtWithDesc first");
-		return false;
-	}
-	if (!buf) {
-		error("failed to allocate rx descriptor");
-		return false;
-	}
-	volatile union ixgbe_adv_tx_desc* txd = p_desc_ring_start + desc_idx;
-	uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
-		txd->read.buffer_addr = buf->iova + data_offset;
-		// always the same flags: one buffer (EOP), advanced data descriptor, CRC offload, data length
-		txd->read.cmd_type_len =
-			IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS | IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DTYP_DATA | buf->size;
-		// no fancy offloading stuff - only the total payload length
-		// implement offloading flags here:
-		// 	* ip checksum offloading is trivial: just set the offset
-		// 	* tcp/udp checksum offloading is more annoying, you have to precalculate the pseudo-header checksum
-		txd->read.olinfo_status = buf->size << IXGBE_ADVTXD_PAYLEN_SHIFT;
-	return true;
-
 }
 
 uint16_t IXGBE_TxRingBuffer::_calcIPChecksum(const uint8_t* data, uint32_t size) {
@@ -252,11 +237,12 @@ bool IXGBE_TxRingBuffer::cleanDescriptorRing(uint16_t min_clean_num){
 
 	// Clean exactly min_clean_num descriptors and their corresponding buffers
 	for (uint16_t cleaned = 0; cleaned < min_clean_num; cleaned++) {
-		struct pkt_buf* buf = getLinkedBufAddr();
+		struct pkt_buf* buf = p_linked_buf_addr[m_desc_head];
 		if (buf) {
 			p_mem_pool->freePktBuf(buf);
 		}
+		p_linked_buf_addr[m_desc_head] = nullptr;
+		m_desc_head = wrap_ring(m_desc_head, m_num_desc);
 	}
-	m_desc_head = wrap_ring(cleanup_to, m_num_desc);
 	return true;
 }

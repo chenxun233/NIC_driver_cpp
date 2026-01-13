@@ -260,10 +260,7 @@ bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, ui
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
 		p_rx_ring_buffers[i]->createDescriptorRing(m_fds.container_fd,m_basic_para.p_bar_addr[0],num_buf,sizeof(union ixgbe_adv_rx_desc),i);
-		for (uint16_t j = 0; j < num_buf; j++){
-		struct pkt_buf* buf = p_rx_ring_buffers[i]->getMemPool()->popOutOnePktBufFromTop();
-		p_rx_ring_buffers[i]->linkPKTBufToDesc(buf, j);
-		}
+		p_rx_ring_buffers[i]->linkPktBufWithDesc(num_buf);
     }
     return true;
 }
@@ -374,50 +371,6 @@ bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
 	return true;
 }
 
-
-void Intel82599Dev::send(){
-
-    IXGBE_TxRingBuffer *tx_ring = p_tx_ring_buffers[0];
-	uint64_t last_stats_printed = BasicDev::_monotonic_time();
-	uint64_t counter = 0;
-	struct DevStatus stats_old, stats;
-	_initStatus(&stats);
-	_initStatus(&stats_old);
-
-	// array of bufs_with_data sent out in a batch
-	struct pkt_buf* bufs_with_data[BATCH_SIZE];
-	
-	// tx loop
-	for (;;) {
-		uint16_t m_desc_head = tx_ring->getDescHeadIdx(); // next descriptor to clean up
-		(void)tx_ring->getMemPool()->popOutMultiPktBuf(bufs_with_data, BATCH_SIZE);
-		
-		tx_ring->cleanDescriptorRing(TX_CLEAN_BATCH);
-		uint32_t sent;
-		uint32_t next_index;
-		for (sent = 0; sent < BATCH_SIZE; sent++) {
-			next_index = wrap_ring(tx_ring->getDescTailIdx(), tx_ring->getMemPool()->getNumOfBufs());
-			// we are full if the next index is the one we are trying to reclaim
-			if (m_desc_head == next_index) {
-				break;;
-			}
-			tx_ring->linkPktBufWithDesc();
-			// printf("the Tx index is %u \n", tx_ring->getDescTailIdx());
-		}
-		set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tx_ring->getDescTailIdx());
-		
-		// print
-		if ((counter++ & 0xFFF) == 0) {
-			uint64_t time = BasicDev::_monotonic_time();
-			if (time - last_stats_printed > 1000 * 1000 * 1000) {
-				stats = this->_readStatus();
-				_print_stats_diff(&stats, &stats_old, time - last_stats_printed);
-				stats_old = stats;
-				last_stats_printed = time;
-			}
-		}
-	}
-}
 
 
 
@@ -828,7 +781,7 @@ void Intel82599Dev::loopSendTest(uint32_t num_buf){
 		for (uint32_t i = 0; i < num_buf; i++) {
 			if(!p_tx_ring_buffers[0]->fillPktBuf(pkt_data, PKT_SIZE)) break;
 		}	
-        uint16_t tail = p_tx_ring_buffers[0]->linkPktBufWithDesc();
+        uint16_t tail = p_tx_ring_buffers[0]->linkPktBufWithDesc(num_buf);
         this->infoNIC(tail);
 		// printf("sent\n");
 		if ((counter++ & 0xFFF) == 0) {

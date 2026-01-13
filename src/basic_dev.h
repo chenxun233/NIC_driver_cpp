@@ -86,7 +86,6 @@ class BasicDev{
                                         size_t size, 
                                         uint16_t queue_id)              = 0 ;
         virtual bool        fillTxMemPool(uint32_t num_buf)        = 0 ;
-        virtual void        send()                      = 0 ;
         basic_para_type     get_basic_para()                                ; 
     private:
         virtual bool        _getFD()                                    = 0 ;
