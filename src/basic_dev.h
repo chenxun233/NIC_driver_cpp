@@ -41,6 +41,7 @@ struct InterruptQueue {
 	uint64_t instr_counter; // Instruction counter to avoid unnecessary calls to monotonic_time
 	uint64_t rx_pkts; // The number of received packets since the last check
 	uint64_t interval; // The interval to check the interrupt flag
+    uint32_t  timeout_ms{100}; // interrupt timeout in milliseconds
 	struct interrupt_moving_avg moving_avg; // The moving average of the hybrid interrupt
 };
 struct basic_para_type{
@@ -71,7 +72,7 @@ class BasicDev{
            BasicDev(std::string pci_addr,uint8_t max_bar_index )            ;
         virtual             ~BasicDev()   = default                         ;
         virtual bool        initHardware()  = 0 ;
-        virtual bool        initializeInterrupt(const int &interrupt_interval) = 0 ;
+        virtual bool        initializeInterrupt(const int interrupt_interval, const uint32_t timeout_ms) = 0 ;
         virtual bool        enableDevQueues()                           = 0 ;
         virtual bool        enableDevInterrupt()                        = 0 ;
         virtual bool        wait4Link()                                 = 0 ;

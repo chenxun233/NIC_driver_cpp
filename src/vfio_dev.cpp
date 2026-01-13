@@ -542,11 +542,11 @@ bool Intel82599Dev::setPromisc(bool enable){
 }
 
 
-bool Intel82599Dev::initializeInterrupt(const int &interrupt_interval){
+bool Intel82599Dev::initializeInterrupt(const int interrupt_interval, const uint32_t timeout_ms){
     debug("entered Intel82599Dev::initializeInterrupt");
 	return
 	this->_getDevIRQType()				&&
-	this->_setupIRQQueues(interrupt_interval);
+	this->_setupIRQQueues(interrupt_interval, timeout_ms);
 }
 
 bool Intel82599Dev::_getDevIRQType(){
@@ -648,7 +648,8 @@ int Intel82599Dev::_vfio_epoll_ctl(int event_fd){
 	return epoll_fd;
 }
 
-bool Intel82599Dev::_setupIRQQueues(const int &interrupt_interval){
+bool Intel82599Dev::_setupIRQQueues(const int interrupt_interval, const uint32_t timeout_ms){
+	debug("entered Intel82599Dev::_setupIRQQueues");
 	switch (m_interrupt_para.interrupt_type) {	
 		case VFIO_PCI_MSIX_IRQ_INDEX: {
 			for (uint32_t rx_queue = 0; rx_queue < m_basic_para.num_rx_queues; rx_queue++) {
@@ -660,6 +661,7 @@ bool Intel82599Dev::_setupIRQQueues(const int &interrupt_interval){
 				interrupt_queue.moving_avg.length = 0;
 				interrupt_queue.moving_avg.index = 0;
 				interrupt_queue.interval = interrupt_interval;
+				interrupt_queue.timeout_ms = timeout_ms;
 				m_interrupt_para.interrupt_queues.push_back(interrupt_queue);
 			}
 			break;

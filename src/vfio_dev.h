@@ -24,7 +24,7 @@ class Intel82599Dev : public BasicDev{
         Intel82599Dev(std::string pci_addr, uint8_t max_bar_index);
         ~Intel82599Dev();
         bool        initHardware()                override;
-        bool        initializeInterrupt(const int &interrupt_interval)        override;
+        bool        initializeInterrupt(const int interrupt_interval, const uint32_t timeout_ms)        override;
         bool        enableDevQueues()                                         override;
         bool        enableDevInterrupt()                                      override;
         bool        setRxRingBuffers(uint16_t num_tx_queues,uint32_t num_buf, uint32_t buf_size)     override;
@@ -62,7 +62,7 @@ class Intel82599Dev : public BasicDev{
         void        _enableDevMSIxInterrupt(uint16_t queue_id)                             ;
         uint32_t    _get_link_speed()                                                      ;
         bool        _getDevIRQType()                                                       ;
-        bool        _setupIRQQueues(const int &interrupt_interval)                         ;
+        bool        _setupIRQQueues(const int interrupt_interval, const uint32_t timeout_ms);
         int         _injectEventFdToVFIODev_msi()                                          ;
         int         _injectEventFdToVFIODev_msix(int index)                                ;
         int         _vfio_epoll_ctl(int event_fd)                                          ;

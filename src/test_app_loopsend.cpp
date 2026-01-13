@@ -2,6 +2,7 @@
 #include "vfio_dev.h"
 #include <thread>
 #include <pthread.h>
+#include "factory.h"
 
 
 #define PKT_BUF_SIZE 2048
@@ -14,30 +15,15 @@ uint64_t interrupt_interval = 100;
 #define NUM_OF_QUEUE 1
 
 
+std::unique_ptr<BasicDev> device1 = createDevice("0000:04:00.0",0,NUM_OF_QUEUE,NUM_OF_RX_BUF, PKT_BUF_SIZE, INTERRUPT_INITIAL_INTERVAL, 100);
+std::unique_ptr<BasicDev> device2 = createDevice("0000:05:00.0",0,NUM_OF_QUEUE,NUM_OF_RX_BUF, PKT_BUF_SIZE, INTERRUPT_INITIAL_INTERVAL, 100);
+
 void thread1(){
-    std::unique_ptr<Intel82599Dev> device1 = std::make_unique<Intel82599Dev>("0000:04:00.0",0);
-    device1->initHardware();
-    device1->setRxRingBuffers(NUM_OF_QUEUE,NUM_OF_RX_BUF, PKT_BUF_SIZE);
-    device1->setTxRingBuffers(NUM_OF_QUEUE,NUM_OF_TX_BUF, PKT_BUF_SIZE);
-    device1->initializeInterrupt(INTERRUPT_INITIAL_INTERVAL);
-    device1->enableDevQueues()       ;
-    device1->enableDevInterrupt()    ;
-    device1->setPromisc(true)        ;
-    device1->wait4Link()             ;            
-    device1->loopSendTest(BATCH_SIZE);
+    static_cast<Intel82599Dev*>(device1.get())->loopSendTest(64);
 }
 
 void thread2(){
-    std::unique_ptr<Intel82599Dev> device2 = std::make_unique<Intel82599Dev>("0000:05:00.0",0);
-    device2->initHardware();
-    device2->setRxRingBuffers(NUM_OF_QUEUE,NUM_OF_RX_BUF, PKT_BUF_SIZE);
-    device2->setTxRingBuffers(NUM_OF_QUEUE,NUM_OF_TX_BUF, PKT_BUF_SIZE);
-    device2->initializeInterrupt(INTERRUPT_INITIAL_INTERVAL);
-    device2->enableDevQueues()       ;
-    device2->enableDevInterrupt()    ;
-    device2->setPromisc(true)        ;
-    device2->wait4Link()             ;            
-    device2->loopSendTest(BATCH_SIZE);
+    static_cast<Intel82599Dev*>(device2.get())->loopSendTest(64);
 }
 
 int main() {
