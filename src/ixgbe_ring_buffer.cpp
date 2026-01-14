@@ -1,6 +1,7 @@
 #include "ixgbe_ring_buffer.h"
 #include "device.h"
 #include "log.h"
+#include <sys/epoll.h>
 #define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
 using namespace std;
 
@@ -24,7 +25,63 @@ bool IXGBE_RxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	return true;
 };
 
-uint16_t IXGBE_RxRingBuffer::linkPktBufWithDesc(uint16_t batch_size){
+
+int IXGBE_RxRingBuffer::vfio_epoll_wait(int epoll_fd, uint16_t timeout){
+	struct epoll_event events[1];
+	int rc;
+
+	while (1) {
+		// Waiting for packets
+		rc = (int) check_err(epoll_wait(epoll_fd, events, 1, timeout), "to handle epoll wait");
+		if (rc > 0) {
+			/* epoll_wait has at least one fd ready to read */
+			for (int i = 0; i < rc; i++) {
+				uint64_t val;
+				// read event file descriptor to clear interrupt.
+				check_err(read(events[i].data.fd, &val, sizeof(val)), "to read event");
+			}
+			break;
+		} else {
+			/* rc == 0, epoll_wait timed out */
+			break;
+		}
+	}
+	return rc;
+}
+
+
+uint16_t IXGBE_RxRingBuffer::readDescriptors(uint16_t batch_size, struct pkt_buf** bufs){
+	uint16_t rx_index = m_desc_head; // rx index we checked in the last run of this function
+	uint32_t buf_index;
+	for (buf_index = 0; buf_index < batch_size; buf_index++) {
+		if (rx_index == m_desc_tail) {
+			// no more descriptors to read
+			break;
+		}
+		volatile union ixgbe_adv_rx_desc* desc_ptr = p_desc_ring_start + rx_index;
+		uint32_t status = desc_ptr->wb.upper.status_error;
+		if (status & IXGBE_RXDADV_STAT_DD) {
+			if (!(status & IXGBE_RXDADV_STAT_EOP)) {
+				error("multi-segment packets are not supported - increase buffer size or decrease MTU");
+			}
+			// got a packet, read and copy the whole descriptor
+			struct pkt_buf* buf = (struct pkt_buf*) p_linked_buf_addr[rx_index];
+			buf->size = desc_ptr->wb.upper.length;
+			// this would be the place to implement RX offloading by translating the device-specific flags
+
+
+			bufs[buf_index] = buf;
+			// want to read the next one in the next iteration, but we still need the last/current to update RDT later
+			rx_index = wrap_ring(rx_index, m_num_desc);
+		} else {
+			break;
+		}
+	}
+	m_desc_head = rx_index;
+	return buf_index; // number of packets read (buf_index++ has been done if "break" is not hit)
+};
+
+uint16_t IXGBE_RxRingBuffer::fillDescRing(uint16_t batch_size){
 	uint16_t linked = 0;
 	if (!p_mem_pool) {
 		error("memory pool not linked, call linkMemoryPool first");
@@ -35,27 +92,26 @@ uint16_t IXGBE_RxRingBuffer::linkPktBufWithDesc(uint16_t batch_size){
 		return m_desc_tail;
 	}
 	while (linked < batch_size) {
-		struct pkt_buf* buf = p_mem_pool->popOutOnePktBufFromTop();
-		if (!buf) {
-			error("failed to allocate rx descriptor");
-			break;
-		}
 		uint16_t next_index = wrap_ring(m_desc_tail, m_num_desc);
 		if (next_index == m_desc_head) {
 			// ring full
-			p_mem_pool->freePktBuf(buf);
+			break;
+		}
+		struct pkt_buf* buf = p_mem_pool->popOutOnePktBufFromTop();
+		if (!buf) {
+			error("failed to allocate rx descriptor");
 			break;
 		}
 		volatile union ixgbe_adv_rx_desc* rxd = p_desc_ring_start + m_desc_tail;
 		uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
 		rxd->read.pkt_addr = buf->iova + data_offset;
 		rxd->read.hdr_addr = 0;
+		p_linked_buf_addr[m_desc_tail] = buf;
 		m_desc_tail = next_index;
 		linked++;
 	}
 	return m_desc_tail;
 };
-
 
 
 bool IXGBE_RxRingBuffer::_bindDescMemIOVA(uint8_t* BAR_addr, uint8_t ring_index){
@@ -125,7 +181,7 @@ bool IXGBE_TxRingBuffer::_bindDescMemVirt(){
 };
 
 
-uint16_t IXGBE_TxRingBuffer::linkPktBufWithDesc(uint16_t batch_size){
+uint16_t IXGBE_TxRingBuffer::linkPktWithDesc(uint16_t batch_size){
 	struct pkt_buf* buf = getUsedBufAddr();
 	// Allocate descriptor-sized tracking array on first use
 	if (!p_linked_buf_addr) {
@@ -200,15 +256,7 @@ bool IXGBE_TxRingBuffer::fillPktBuf (const char* data, uint32_t size) {
 	return true;
 }
 
-bool IXGBE_TxRingBuffer::freeUsedBuf() {
-	struct pkt_buf* buf = getUsedBufAddr();
-	if (!buf) {
-		warn("no used buf to free");
-		return true;
-	}
-	p_mem_pool->freePktBuf(buf);
-	return true;
-}
+
 
 bool IXGBE_TxRingBuffer::cleanDescriptorRing(uint16_t min_clean_num){
 	if (!p_desc_ring_start || !p_mem_pool) {

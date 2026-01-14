@@ -13,10 +13,18 @@ add_compile_options(-g -O2 -march=native -fomit-frame-pointer
     -Wpedantic
 )
 
-file(GLOB_RECURSE IXY_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+set(DRIVER_SOURCES
+    src/basic_dev.cpp
+    src/basic_ring_buffer.cpp
+    src/dma_memory_allocator.cpp
+    src/factory.cpp
+    src/ixgbe_ring_buffer.cpp
+    src/memory_pool.cpp
+    src/vfio_dev.cpp
 )
 
-add_executable(test_app_loopsend ${IXY_SOURCES})
+add_executable(test_app_loopsend ${DRIVER_SOURCES} src/test_app_loopsend.cpp)
 target_include_directories(test_app_loopsend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_executable(test_app_pcap ${DRIVER_SOURCES} src/test_app_pcap.cpp)
+target_include_directories(test_app_pcap PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

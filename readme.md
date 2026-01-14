@@ -26,7 +26,7 @@ Here a simplified ring buffer structure is given. When working with devices supp
 1. `fillPktBuf()`: This function fills data into free packet buffers in the memory pool. Also, a packet ring buffer (an array) notes the addresses of the buffers with data, as shown below:
 ![fillPktBuf()](figures/fillPktBuf().png)
 2. `linkPktWithDesc()`: This function pushes the IOVA of the packet buffers with data to the descriptor ring. It also cleans the packet ring buffer. This is done by moving the `head` index in packt ring buffer. This behavior is also provided below:
-![linkPktWithDesc()](figures/linkPKTBufWithDesc().png)
+![linkPktWithDesc()](figures/linkPktWithDesc().png)
 3. `cleanDescriptorRing()`: This function cleans the descriptor ring, and moves the index `free_stack_top` to the top, which means all the packet buffers are available now. The `data` inside each packet buffer now marked with grey, indicating that they are outdated.
 ![linkPktWithDesc()](figures/cleanDescriptorRing().png)
 # How to run

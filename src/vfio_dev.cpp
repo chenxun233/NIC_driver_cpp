@@ -12,9 +12,9 @@
 #include <sys/epoll.h>
 #include "ixgbe_ring_buffer.h"
 #include <string>
+#include <sys/time.h>
 
-
-static const char pkt_data[] = {
+static char pkt_data[PKT_SIZE] = {
 	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // dst MAC
 	0x10, 0x10, 0x10, 0x10, 0x10, 0x10, // src MAC
 	0x08, 0x00,                         // ether type: IPv4
@@ -32,6 +32,23 @@ static const char pkt_data[] = {
 	'i', 'x', 'y'                       // payload
 	// rest of the payload is zero-filled because mempools guarantee empty bufs_with_data
 };
+
+typedef struct pcap_hdr_s {
+	uint32_t magic_number;  /* magic number */
+	uint16_t version_major; /* major version number */
+	uint16_t version_minor; /* minor version number */
+	int32_t  thiszone;      /* GMT to local correction */
+	uint32_t sigfigs;       /* accuracy of timestamps */
+	uint32_t snaplen;       /* max length of captured packets, in octets */
+	uint32_t network;       /* data link type */
+} __attribute__((packed)) pcap_hdr_t;
+
+typedef struct pcaprec_hdr_s {
+	uint32_t ts_sec;        /* timestamp seconds */
+	uint32_t ts_usec;       /* timestamp microseconds */
+	uint32_t incl_len;      /* number of octets of packet saved in file */
+	uint32_t orig_len;      /* actual length of packet */
+} __attribute__((packed)) pcaprec_hdr_t;
 
 Intel82599Dev::Intel82599Dev(std::string pci_addr, uint8_t max_bar_index) :
 // get file descriptors of the 1. container, 2. group, 3. device
@@ -260,7 +277,7 @@ bool Intel82599Dev::setRxRingBuffers(uint16_t num_rx_queues,uint32_t num_buf, ui
         p_rx_ring_buffers.push_back(new IXGBE_RxRingBuffer);
         p_rx_ring_buffers[i]->linkMemoryPool(new DMAMemoryPool(num_buf, buf_size, m_fds.container_fd));
 		p_rx_ring_buffers[i]->createDescriptorRing(m_fds.container_fd,m_basic_para.p_bar_addr[0],num_buf,sizeof(union ixgbe_adv_rx_desc),i);
-		p_rx_ring_buffers[i]->linkPktBufWithDesc(num_buf);
+		p_rx_ring_buffers[i]->fillDescRing(num_buf);
     }
     return true;
 }
@@ -349,30 +366,6 @@ bool Intel82599Dev::sendOnQueue(uint8_t* p_data, size_t size, uint16_t queue_id)
 	(void)size;
 	(void)queue_id;
 	return true; }
-
-
-bool Intel82599Dev::fillTxMemPool(uint32_t num_buf){
-	 DMAMemoryPool* mempool = p_tx_ring_buffers[0]->getMemPool();
-	// pre-fill all our packet buffers with some templates that can be modified later
-	// we have to do it like this because sending is async in the hardware; we cannot re-use a buffer immediately
-	struct pkt_buf** bufs_with_data = new struct pkt_buf*[num_buf];
-	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
-		struct pkt_buf* buf = mempool->popOutOnePktBufFromTop();
-		buf->size = PKT_SIZE;
-		memcpy(buf->data, pkt_data, sizeof(pkt_data));
-		*(uint16_t*) (buf->data + 24) = _calc_ip_checksum(buf->data + 14, 20);
-		bufs_with_data[buf_id] = buf;
-	}
-	// return them all to the mempool, all future allocations will return bufs_with_data with the data set above
-	for (uint32_t buf_id = 0; buf_id < num_buf; buf_id++) {
-		mempool->freePktBuf(bufs_with_data[buf_id]);
-	}
-	delete [] bufs_with_data;
-	return true;
-}
-
-
-
 
 
 void Intel82599Dev::_initStatus(DevStatus* stats){
@@ -762,11 +755,13 @@ bool Intel82599Dev::_initTxDescRingRegs(){
 	return true;
 }
 // this function sends packets in [TDH, TDT).
-void Intel82599Dev::infoNIC(uint16_t tail_index){
+void Intel82599Dev::infoNIC_Tx(uint16_t tail_index){
 	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_TDT(0), tail_index);
 }
 
-
+void        Intel82599Dev::infoNIC_Rx(uint16_t tail_index){
+	set_bar_reg32(m_basic_para.p_bar_addr[0], IXGBE_RDT(0), tail_index);
+}
 
 
 void Intel82599Dev::loopSendTest(uint32_t num_buf){
@@ -781,10 +776,11 @@ void Intel82599Dev::loopSendTest(uint32_t num_buf){
 
         p_tx_ring_buffers[0]->cleanDescriptorRing(TX_CLEAN_BATCH);
 		for (uint32_t i = 0; i < num_buf; i++) {
+			memcpy(pkt_data + 45, &i, sizeof(i));
 			if(!p_tx_ring_buffers[0]->fillPktBuf(pkt_data, PKT_SIZE)) break;
 		}	
-        uint16_t tail = p_tx_ring_buffers[0]->linkPktBufWithDesc(num_buf);
-        this->infoNIC(tail);
+        uint16_t tail = p_tx_ring_buffers[0]->linkPktWithDesc(num_buf);
+        this->infoNIC_Tx(tail);
 		// printf("sent\n");
 		if ((counter++ & 0xFFF) == 0) {
 			uint64_t time = BasicDev::_monotonic_time();
@@ -796,4 +792,59 @@ void Intel82599Dev::loopSendTest(uint32_t num_buf){
 			}
 		}
     }
+}
+
+// n_packets == -1 indicates unbounded capture
+void Intel82599Dev::capturePackets(uint16_t batch_size, int64_t n_packets, std::string file_name){
+	FILE* pcap = fopen(file_name.c_str(), "wb");
+	if (pcap == NULL) {
+		error("failed to open file %s", file_name.c_str());
+		return;
+	}
+
+	pcap_hdr_t header = {
+		.magic_number =  0xa1b2c3d4,
+		.version_major = 2,
+		.version_minor = 4,
+		.thiszone = 0,
+		.sigfigs = 0,
+		.snaplen = 65535,
+		.network = 1, // Ethernet
+	};
+	fwrite(&header, sizeof(header), 1, pcap);
+
+	struct pkt_buf** received_pkt = new struct pkt_buf*[batch_size];
+	struct timeval tv;
+	uint32_t received_pkt_count = 0;
+	uint16_t tail_idx;
+	info("capturing pkt ...");
+	while(n_packets != 0){
+		if (m_interrupt_para.interrupt_queues[0].timeout_ms){
+			p_rx_ring_buffers[0]->vfio_epoll_wait(m_interrupt_para.interrupt_queues[0].vfio_epoll_fd,
+												m_interrupt_para.interrupt_queues[0].timeout_ms);
+			}
+
+		received_pkt_count = p_rx_ring_buffers[0]->readDescriptors(batch_size,received_pkt);	
+		gettimeofday(&tv, NULL);
+		for (uint32_t i = 0; i < received_pkt_count && n_packets != 0; i++) {
+				pcaprec_hdr_t rec_header = {
+					.ts_sec = (uint32_t)tv.tv_sec,
+					.ts_usec = (uint32_t)tv.tv_usec,
+					.incl_len = received_pkt[i]->size,
+					.orig_len = received_pkt[i]->size
+				};
+				fwrite(&rec_header, sizeof(pcaprec_hdr_t), 1, pcap);
+
+				fwrite(received_pkt[i]->data, received_pkt[i]->size, 1, pcap);
+				// n_packets == -1 indicates unbounded capture
+				if (n_packets > 0) {
+					n_packets--;
+				}
+		}
+		p_rx_ring_buffers[0]->releasePktBufs(received_pkt,received_pkt_count);
+		tail_idx = p_rx_ring_buffers[0]->fillDescRing(received_pkt_count);
+		infoNIC_Rx(tail_idx);
+	}
+	fclose(pcap);
+	delete[] received_pkt;
 }
