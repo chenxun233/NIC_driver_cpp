@@ -22,7 +22,7 @@ class RingBuffer{
         uint32_t        m_num_desc{0}    ;
         DMAMemoryPool*  p_mem_pool{nullptr};
         DMAMemoryPair   m_desc_mem_pair{0,0,0};  
-        pkt_buf**       p_linked_buf_addr{nullptr}; // one-on-one to descriptors
+        pkt_buf**       a_linked_buf_addr{nullptr}; // one-on-one to descriptors
         uint16_t        m_desc_head{0}        ; // used descriptor start index
         uint16_t        m_desc_tail{0}        ; // used descriptor end index
 

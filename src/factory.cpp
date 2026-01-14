@@ -14,7 +14,7 @@ std::unique_ptr<BasicDev> createDevice( const std::string pci_addr,
     device1->initializeInterrupt(INTERRUPT_INITIAL_INTERVAL, timeout_ms);
     device1->enableDevQueues()       ;
     device1->enableDevInterrupt()    ;
-    device1->setPromisc(true)        ;
+    device1->setPromisc(true) ;
     device1->wait4Link()             ;
     return device1;
 }

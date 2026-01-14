@@ -1,43 +1,187 @@
-# Introduction
-Inspired by https://github.com/emmericp/ixy, which is a simple C-based user space NIC driver, this project is a C++ realization of it.
-By rebuilding the project in C++, it is better for beginners to understand the hierarchy and workflow of user-space NIC driver.
+# NIC Driver in C++ (User Space)
 
-Note this program only support Linux.
-# Content
-This project does not realize all the functions provided in https://github.com/emmericp/ixy yet. It only supports VFIO based NIC. Also, in terms of example applications, only data sending is realized, which is from `ixy-pktgen.c` in `ixy/src/app`
-# Features
-1. Clearer structure. The **Ring buffer**, **Memory Pool** and the **device** itself are all decoupled.
-2. Clearer ring buffers: The **packet-buffer ring** and **descriptor ring** are decoupled. The filling of **packet-buffer ring** is isolated from the modification of **descriptor ring**.
-3. Host and NIC isolation. The manipulations on the host and NIC (the registers) are isolated, which is easy for the reuse of code.
-4. Future extension. `BasicDev` and `RingBuffer` are all abstract classes. This makes future extension available.
-5. Better Naming. Some functions and variables are renamed for better understanding.
-# Hierarchy illustration
+Inspired by [ixy](https://github.com/emmericp/ixy), a simple C-based user space NIC driver, this project is a C++ implementation designed for better readability and extensibility.
+
+By rebuilding the project in C++, it becomes easier for beginners to understand the hierarchy and workflow of user-space NIC drivers.
+
+> **Note:** This program only supports Linux.
+
+## Features
+
+1. **Clearer structure** - The **Ring Buffer**, **Memory Pool**, and **Device** are all decoupled into separate classes.
+2. **Decoupled ring buffers** - The **packet-buffer ring** and **descriptor ring** are separated. Filling packet buffers is isolated from descriptor ring manipulation.
+3. **Host and NIC isolation** - Host-side operations and NIC register manipulations are isolated for better code reuse.
+4. **Extensible design** - `BasicDev` and `RingBuffer` are abstract classes, enabling future extensions (e.g., FPGA-based NIC drivers).
+5. **Better naming** - Functions and variables are renamed for improved clarity.
+6. **TX and RX support** - Both transmit and receive paths are implemented.
+7. **Interrupt support** - MSI/MSI-X interrupt support with epoll-based waiting.
+8. **Packet capture** - Built-in pcap file capture functionality.
+
+## Hierarchy
+
 ![The hierarchy of the classes in this project](figures/hierarchy.png)
-1. `BasicDev` is an abstract class. In this project, `Intel82599Dev` is a realization of it in Intel NIC. A new realization can be done in the future. (For example, FPGA-based NIC driver)
-2. `DMAMemoryAllocator` is a helper class, which is implemented using singleton pattern. The function is to allocate DMA-enabled memory.
-3. `DMAMemoryPool` is a DMA-memory based memory pool.
-4. `RingBuffer` is an abstract class.
-5. `IXGBE_RxRingBuffer` and `IXGBE_TxRingBuffer` are the realization of the `RingBuffer`. Both of them contain `DMAMemoryPool`.
-# Ring buffer structure
+
+| Class | Description |
+|-------|-------------|
+| `BasicDev` | Abstract base class for NIC devices. `Intel82599Dev` is the concrete implementation for Intel 82599 NICs. |
+| `DMAMemoryAllocator` | Singleton helper class for allocating DMA-enabled memory using 2MB huge pages. |
+| `DMAMemoryPool` | Memory pool built on DMA memory, managing packet buffers with a free stack. |
+| `RingBuffer` | Abstract base class for ring buffers. |
+| `IXGBE_RxRingBuffer` | RX ring buffer implementation for Intel 82599. |
+| `IXGBE_TxRingBuffer` | TX ring buffer implementation for Intel 82599. |
+
+## Ring Buffer Structure
+
 ![Simplified ringbuffer structure](figures/simplified_ringbuffer_structure.png)
 
-Here a simplified ring buffer structure is given. When working with devices supporting VFIO, there will always be two types of memory addresses, one is for the outter devices, named IO virtual address (IOVA). The other is the vritual address for the host (shorten as virt here). The allocation of the two memory address is managed by dma_memory_allocator. This figure shows how Memory pool and the descriptors work together in one ring buffer so the outter device can access the data inside the memory pool indirectly.
-# Important functions for TX
-1. `fillPktBuf()`: This function fills data into free packet buffers in the memory pool. Also, a packet ring buffer (an array) notes the addresses of the buffers with data, as shown below:
-![fillPktBuf()](figures/fillPktBuf().png)
-2. `linkPktWithDesc()`: This function pushes the IOVA of the packet buffers with data to the descriptor ring. It also cleans the packet ring buffer. This is done by moving the `head` index in packt ring buffer. This behavior is also provided below:
-![linkPktWithDesc()](figures/linkPktWithDesc().png)
-3. `cleanDescriptorRing()`: This function cleans the descriptor ring, and moves the index `free_stack_top` to the top, which means all the packet buffers are available now. The `data` inside each packet buffer now marked with grey, indicating that they are outdated.
-![linkPktWithDesc()](figures/cleanDescriptorRing().png)
-# How to run
-1. First of all, unbind the NIC from the keneral driver. This can be done by running `scripts/setup-vfio.sh`. Just input the PCIe address, separated with space.
-2. Enable hugepage in your Linux system. Run `scripts/setup-hugepages.sh` with the number you desire. This script allocate 2-MB hugepages.
-3. For compilation, just run `cmake -S . -B build` and then `cmake --build build`
-4. For function testing. cd to `build` folder and command `./test_app_loopsend`.The default PCIe addresses are `0000:04:00.0` and `0000:05:00.0` while the BAR index is `0`. The program will start two threads, each for one NIC. The two NICs should be connected together. What you expect is that two NICs send data to each other.
-For you own PCIe device, check the corresponding PCIe address by using `lspci` in the shell.
-# Future work
-1. A new driver class for FPGA-based NIC will be added to this project.
-2. Multiple queue function is to be realized in the future.
-3. Rx.
+When working with VFIO devices, there are two types of memory addresses:
+- **IOVA (IO Virtual Address)** - Address visible to the NIC for DMA operations
+- **Virtual Address (virt)** - Address visible to the host CPU
 
-This work is done by myself with the help of AI to help people new to NIC driver to learn the flow inside. Mistakes might be found. Any suggestion is welcome.
+The `DMAMemoryAllocator` manages both address spaces. The figure above shows how the memory pool and descriptors work together, allowing the NIC to access packet data indirectly through descriptors.
+
+### Free Stack
+
+![Free Stack Structure](figures/free_stack.png)
+
+The memory pool uses a **free stack** to track available packet buffers. When a buffer is needed, it's popped from the stack. When released, it's pushed back.
+
+## TX Path - Important Functions
+
+### 1. `fillPktBuf()`
+
+Fills data into free packet buffers from the memory pool. A "used buffer queue" tracks buffers containing data to be transmitted.
+
+![fillPktBuf()](figures/fillPktBuf().png)
+
+### 2. `linkPktWithDesc()`
+
+Links packet buffers (with data) to TX descriptors by writing their IOVA addresses. This prepares the descriptors for the NIC to read.
+
+![linkPktWithDesc()](figures/linkPKTBufWithDesc().png)
+
+### 3. `cleanDescriptorRing()`
+
+Cleans completed TX descriptors and returns their associated packet buffers to the memory pool's free stack.
+
+![cleanDescriptorRing()](figures/cleanDescriptorRing().png)
+
+## RX Path - Important Functions
+
+### 1. `fillDescRing()`
+
+Allocates packet buffers from the memory pool and links them to RX descriptors. The NIC will DMA received packets into these buffers.
+
+![fillDescRing()](figures/fillDescRing().png)
+
+### 2. `readDescriptors()`
+
+Reads completed RX descriptors to retrieve received packets. Returns pointers to packet buffers containing received data.
+
+### 3. `releasePktBufs()`
+
+Returns processed packet buffers back to the memory pool's free stack.
+
+## Test Applications
+
+### 1. `test_app_loopsend`
+
+Continuously sends packets in a loop. Useful for throughput testing.
+
+```bash
+./build/test_app_loopsend
+```
+
+### 2. `test_app_pcap`
+
+Captures received packets and saves them to a pcap file (compatible with Wireshark).
+
+```bash
+./build/test_app_pcap <output.pcap>
+```
+
+## How to Run
+
+### Prerequisites
+
+1. **Unbind NIC from kernel driver**
+   ```bash
+   sudo ./scripts/setup-vfio.sh <pci_address>
+   ```
+   Example: `sudo ./scripts/setup-vfio.sh 0000:04:00.0 0000:05:00.0`
+
+2. **Enable huge pages**
+   ```bash
+   sudo ./scripts/setup-hugepages.sh <number_of_pages>
+   ```
+   This script allocates 2MB huge pages.
+
+3. **Find your NIC's PCIe address**
+   ```bash
+   lspci | grep Ethernet
+   ```
+
+### Compilation
+
+```bash
+cmake -S . -B build
+cmake --build build
+```
+
+### Running
+
+```bash
+# For loopback send test (modify PCIe address in source if needed)
+./build/test_app_loopsend
+
+# For packet capture
+./build/test_app_pcap capture.pcap
+```
+
+**Default configuration:**
+- PCIe addresses: `0000:04:00.0` and `0000:05:00.0`
+- BAR index: `0`
+- Buffer size: 2048 bytes
+- Number of buffers: 2048
+
+## Project Structure
+
+```
+├── CMakeLists.txt
+├── readme.md
+├── figures/
+│   ├── hierarchy.png
+│   ├── simplified_ringbuffer_structure.png
+│   ├── free_stack.png
+│   ├── fillPktBuf().png
+│   ├── linkPKTBufWithDesc().png
+│   ├── cleanDescriptorRing().png
+│   └── fillDescRing().png
+├── scripts/
+│   ├── setup-hugepages.sh
+│   └── setup-vfio.sh
+└── src/
+    ├── basic_dev.cpp/h          # Abstract device base class
+    ├── basic_ring_buffer.cpp/h  # Abstract ring buffer base class
+    ├── dma_memory_allocator.cpp/h # DMA memory allocation (singleton)
+    ├── memory_pool.cpp/h        # Packet buffer memory pool
+    ├── ixgbe_ring_buffer.cpp/h  # Intel 82599 ring buffer implementation
+    ├── ixgbe_type.h             # Intel 82599 register definitions
+    ├── vfio_dev.cpp/h           # Intel 82599 device implementation
+    ├── factory.cpp/h            # Device factory function
+    ├── device.h                 # Helper macros and functions
+    ├── log.h                    # Logging utilities
+    ├── test_app_loopsend.cpp    # TX throughput test
+    └── test_app_pcap.cpp        # Packet capture application
+```
+
+## Future Work
+
+1. FPGA-based NIC driver class
+2. Multi-queue support
+3. Hardware offloading (checksum, TSO)
+4. Performance optimizations (prefetching, cache-line alignment)
+
+## Acknowledgments
+
+This work is done to help people new to NIC drivers understand the internals.  Suggestions and corrections are welcome!

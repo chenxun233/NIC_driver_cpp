@@ -40,13 +40,13 @@ class IXGBE_TxRingBuffer:public RingBuffer {
         bool            setUsedBufAddr      (pkt_buf* buf) {
                                                                 uint32_t next_tail = wrap_ring(m_used_buf_tail, m_num_buf);
                                                                 if (next_tail == m_used_buf_head) return false;  // Queue full
-                                                                p_used_buf_addr[m_used_buf_tail] = buf;
+                                                                a_used_buf_addr[m_used_buf_tail] = buf;
                                                                 m_used_buf_tail = next_tail;
                                                                 return true;
                                                             }
         pkt_buf*        getUsedBufAddr      () {
                                                     if (m_used_buf_head == m_used_buf_tail) return nullptr;  // Queue empty
-                                                    pkt_buf* buf = p_used_buf_addr[m_used_buf_head];
+                                                    pkt_buf* buf = a_used_buf_addr[m_used_buf_head];
                                                     m_used_buf_head = wrap_ring(m_used_buf_head, m_num_buf);
                                                     return buf;
                                                 }
@@ -56,7 +56,7 @@ class IXGBE_TxRingBuffer:public RingBuffer {
         uint16_t        _calcIPChecksum         (const uint8_t* data, uint32_t size);
     private:
         volatile union ixgbe_adv_tx_desc*   p_desc_ring_start;
-        pkt_buf**       p_used_buf_addr{nullptr};    
+        pkt_buf**       a_used_buf_addr{nullptr};    
         uint32_t        m_used_buf_head{0};   // Dequeue from head (FIFO)
         uint32_t        m_used_buf_tail{0};   // Enqueue at tail
         

@@ -65,7 +65,7 @@ uint16_t IXGBE_RxRingBuffer::readDescriptors(uint16_t batch_size, struct pkt_buf
 				error("multi-segment packets are not supported - increase buffer size or decrease MTU");
 			}
 			// got a packet, read and copy the whole descriptor
-			struct pkt_buf* buf = (struct pkt_buf*) p_linked_buf_addr[rx_index];
+			struct pkt_buf* buf = (struct pkt_buf*) a_linked_buf_addr[rx_index];
 			buf->size = desc_ptr->wb.upper.length;
 			// this would be the place to implement RX offloading by translating the device-specific flags
 
@@ -106,7 +106,7 @@ uint16_t IXGBE_RxRingBuffer::fillDescRing(uint16_t batch_size){
 		uintptr_t data_offset = (uintptr_t)(buf->data - (uint8_t*)buf);
 		rxd->read.pkt_addr = buf->iova + data_offset;
 		rxd->read.hdr_addr = 0;
-		p_linked_buf_addr[m_desc_tail] = buf;
+		a_linked_buf_addr[m_desc_tail] = buf;
 		m_desc_tail = next_index;
 		linked++;
 	}
@@ -135,13 +135,13 @@ IXGBE_TxRingBuffer::IXGBE_TxRingBuffer(){
 }
 
 IXGBE_TxRingBuffer::~IXGBE_TxRingBuffer(){
-	if (p_used_buf_addr){
-		delete[] p_used_buf_addr;
-		p_used_buf_addr = nullptr;
+	if (a_used_buf_addr){
+		delete[] a_used_buf_addr;
+		a_used_buf_addr = nullptr;
 	}
-	if (p_linked_buf_addr){
-		delete[] p_linked_buf_addr;
-		p_linked_buf_addr = nullptr;
+	if (a_linked_buf_addr){
+		delete[] a_linked_buf_addr;
+		a_linked_buf_addr = nullptr;
 	}
 };
 
@@ -149,7 +149,7 @@ bool IXGBE_TxRingBuffer::linkMemoryPool(DMAMemoryPool* const mem_pool){
 	p_mem_pool = mem_pool;
 	m_num_buf = mem_pool->getNumOfBufs();
 	if (!p_mem_pool) return false;
-	p_used_buf_addr = new pkt_buf*[m_num_buf]();
+	a_used_buf_addr = new pkt_buf*[m_num_buf]();
 	return true;
 }
 
@@ -184,8 +184,8 @@ bool IXGBE_TxRingBuffer::_bindDescMemVirt(){
 uint16_t IXGBE_TxRingBuffer::linkPktWithDesc(uint16_t batch_size){
 	struct pkt_buf* buf = getUsedBufAddr();
 	// Allocate descriptor-sized tracking array on first use
-	if (!p_linked_buf_addr) {
-		p_linked_buf_addr = new pkt_buf*[m_num_desc]();
+	if (!a_linked_buf_addr) {
+		a_linked_buf_addr = new pkt_buf*[m_num_desc]();
 	}
 	uint16_t linked = 0;
 	while (buf && linked < batch_size) {
@@ -200,7 +200,7 @@ uint16_t IXGBE_TxRingBuffer::linkPktWithDesc(uint16_t batch_size){
 			return m_desc_tail;
 		}
 		// Track buffer at the descriptor index AFTER confirming ring has space
-		p_linked_buf_addr[m_desc_tail] = buf;
+		a_linked_buf_addr[m_desc_tail] = buf;
 		volatile union ixgbe_adv_tx_desc* txd = p_desc_ring_start + m_desc_tail;
 		
 		// NIC reads from here
@@ -285,11 +285,11 @@ bool IXGBE_TxRingBuffer::cleanDescriptorRing(uint16_t min_clean_num){
 
 	// Clean exactly min_clean_num descriptors and their corresponding buffers
 	for (uint16_t cleaned = 0; cleaned < min_clean_num; cleaned++) {
-		struct pkt_buf* buf = p_linked_buf_addr[m_desc_head];
+		struct pkt_buf* buf = a_linked_buf_addr[m_desc_head];
 		if (buf) {
 			p_mem_pool->freePktBuf(buf);
 		}
-		p_linked_buf_addr[m_desc_head] = nullptr;
+		a_linked_buf_addr[m_desc_head] = nullptr;
 		m_desc_head = wrap_ring(m_desc_head, m_num_desc);
 	}
 	return true;

@@ -817,33 +817,36 @@ void Intel82599Dev::capturePackets(uint16_t batch_size, int64_t n_packets, std::
 	struct timeval tv;
 	uint32_t received_pkt_count = 0;
 	uint16_t tail_idx;
+	int interrupt_num = 0;
 	info("capturing pkt ...");
 	while(n_packets != 0){
 		if (m_interrupt_para.interrupt_queues[0].timeout_ms){
-			p_rx_ring_buffers[0]->vfio_epoll_wait(m_interrupt_para.interrupt_queues[0].vfio_epoll_fd,
+			interrupt_num = p_rx_ring_buffers[0]->vfio_epoll_wait(m_interrupt_para.interrupt_queues[0].vfio_epoll_fd,
 												m_interrupt_para.interrupt_queues[0].timeout_ms);
-			}
-
-		received_pkt_count = p_rx_ring_buffers[0]->readDescriptors(batch_size,received_pkt);	
-		gettimeofday(&tv, NULL);
-		for (uint32_t i = 0; i < received_pkt_count && n_packets != 0; i++) {
-				pcaprec_hdr_t rec_header = {
-					.ts_sec = (uint32_t)tv.tv_sec,
-					.ts_usec = (uint32_t)tv.tv_usec,
-					.incl_len = received_pkt[i]->size,
-					.orig_len = received_pkt[i]->size
-				};
-				fwrite(&rec_header, sizeof(pcaprec_hdr_t), 1, pcap);
-
-				fwrite(received_pkt[i]->data, received_pkt[i]->size, 1, pcap);
-				// n_packets == -1 indicates unbounded capture
-				if (n_packets > 0) {
-					n_packets--;
-				}
 		}
-		p_rx_ring_buffers[0]->releasePktBufs(received_pkt,received_pkt_count);
-		tail_idx = p_rx_ring_buffers[0]->fillDescRing(received_pkt_count);
-		infoNIC_Rx(tail_idx);
+		// Process packets if interrupt received OR if polling mode (timeout_ms == 0)
+		if (interrupt_num > 0 || !m_interrupt_para.interrupt_queues[0].timeout_ms){
+			received_pkt_count = p_rx_ring_buffers[0]->readDescriptors(batch_size,received_pkt);	
+			gettimeofday(&tv, NULL);
+			for (uint32_t i = 0; i < received_pkt_count && n_packets != 0; i++) {
+					pcaprec_hdr_t rec_header = {
+						.ts_sec = (uint32_t)tv.tv_sec,
+						.ts_usec = (uint32_t)tv.tv_usec,
+						.incl_len = received_pkt[i]->size,
+						.orig_len = received_pkt[i]->size
+					};
+					fwrite(&rec_header, sizeof(pcaprec_hdr_t), 1, pcap);
+
+					fwrite(received_pkt[i]->data, received_pkt[i]->size, 1, pcap);
+					// n_packets == -1 indicates unbounded capture
+					if (n_packets > 0) {
+						n_packets--;
+					}
+			}
+			p_rx_ring_buffers[0]->releasePktBufs(received_pkt,received_pkt_count);
+			tail_idx = p_rx_ring_buffers[0]->fillDescRing(received_pkt_count);
+			infoNIC_Rx(tail_idx);
+		}
 	}
 	fclose(pcap);
 	delete[] received_pkt;

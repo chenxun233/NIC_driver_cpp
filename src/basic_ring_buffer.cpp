@@ -26,8 +26,8 @@ bool RingBuffer::createDescriptorRing(int container_fd, uint8_t* BAR_addr, uint3
 	this->_allocDescMemory(container_fd, num_desc, size_desc);
 	this->_bindDescMemIOVA(BAR_addr, ring_index);
 	this->_bindDescMemVirt();
-	if (!p_linked_buf_addr) {
-		p_linked_buf_addr = new pkt_buf*[m_num_desc]();
+	if (!a_linked_buf_addr) {
+		a_linked_buf_addr = new pkt_buf*[m_num_desc]();
 	}
 	return true;
 }
