@@ -46,6 +46,7 @@ bool DMAMemoryPool::_createPktBufRing(){
         struct pkt_buf* buf = (struct pkt_buf*) (((uint8_t*) m_DMA_mem_pair.virt) + idx * m_buf_size);
         // the offset is shared by virtual and physical address
         uintptr_t offset = (uintptr_t) (idx * m_buf_size);
+        // iova has already bound to the virtual address in DMA memory allocator
         buf->iova = (uintptr_t) m_DMA_mem_pair.iova + offset;
         buf->idx = idx;
         buf->size = 0;

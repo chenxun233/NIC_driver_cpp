@@ -40,6 +40,38 @@ When working with VFIO devices, there are two types of memory addresses:
 
 The `DMAMemoryAllocator` manages both address spaces. The figure above shows how the memory pool and descriptors work together, allowing the NIC to access packet data indirectly through descriptors.
 
+## Data Flow: NIC ↔ Host
+
+Data transfer between the NIC and host occurs through a **two-step IOVA addressing mechanism**:
+
+### Step 1: Descriptor Ring IOVA
+The NIC's DMA engine is configured with the **IOVA of the descriptor ring** itself. The driver writes this base address to specific NIC registers during initialization. This tells the NIC where to find the descriptor ring in memory.
+
+### Step 2: Packet Buffer IOVA (Linked via Descriptors)
+Each descriptor in the ring contains the **IOVA of a packet buffer**. The NIC reads these IOVAs from the descriptors to know where to DMA the actual packet data.
+
+### RX Path (NIC → Host)
+1. Driver allocates packet buffers from the memory pool
+2. Driver writes packet buffer IOVAs into RX descriptors
+3. Driver writes the descriptor ring's IOVA to NIC registers (RDT - RX Descriptor Tail)
+4. NIC reads descriptors from the ring using the descriptor ring IOVA
+5. NIC extracts packet buffer IOVAs from each descriptor
+6. NIC DMAs received packets directly into packet buffers using their IOVAs
+7. NIC marks descriptors as "done" (DD bit set)
+8. Driver reads completed descriptors and retrieves packet data from buffers
+
+### TX Path (Host → NIC)
+1. Driver fills packet buffers with data to transmit
+2. Driver writes packet buffer IOVAs into TX descriptors
+3. Driver updates the descriptor ring tail pointer (TDT register)
+4. NIC reads descriptors from the ring using the descriptor ring IOVA
+5. NIC extracts packet buffer IOVAs from each descriptor
+6. NIC DMAs packet data from buffers using their IOVAs and transmits
+7. NIC marks descriptors as "done" (DD bit set)
+8. Driver cleans completed descriptors and returns buffers to the memory pool
+
+**Key Insight:** The NIC never directly accesses host virtual addresses. All DMA operations use IOVAs, with a two-level indirection: ring IOVA → descriptor → packet buffer IOVA.
+
 ### Free Stack
 
 ![Free Stack Structure](figures/free_stack.png)

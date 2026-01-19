@@ -43,6 +43,7 @@ DMAMemoryPair DMAMemoryAllocator::allocDMAMemory(size_t size, int container_fd){
 }
 
 void*  DMAMemoryAllocator::_allocDMAVirtualAddr(size_t size){
+    // using mmap() because it can assign huge page within which the physical memory is continuous.
     void* virtual_address = (void*) mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB, -1, 0);
     if (virtual_address == MAP_FAILED) {
         error("Failed to mmap DMA memory using huge page. Huge page may have not been enabled. The error code is %s", strerror(errno));
